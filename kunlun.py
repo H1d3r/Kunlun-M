@@ -12,6 +12,9 @@ import django
 
 django.setup()
 
+from Kunlun_M.settings import check_security_settings
+check_security_settings()
+
 from core import main
 
 

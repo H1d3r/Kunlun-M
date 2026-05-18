@@ -9,8 +9,6 @@ from django.urls import path
 
 from web.backend import views
 
-from django.views.decorators.csrf import csrf_exempt
-
 app_name = "backend"
 urlpatterns = [
     path('', views.index, name='index'),
@@ -25,5 +23,5 @@ urlpatterns = [
     path("export/<int:task_id>", views.exportresult, name="exportresult"),
 
     # upload log
-    path("uploadlog", csrf_exempt(views.uploadlog), name="uploadlog")
+    path("uploadlog", views.uploadlog, name="uploadlog")
 ]

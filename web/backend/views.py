@@ -23,6 +23,13 @@ from utils.utils import show_context
 from Kunlun_M.settings import LOGS_PATH
 
 
+def _is_path_under_allowed_dir(path, allowed_dir):
+    """检查路径是否在允许的目录内，防止路径遍历攻击"""
+    real_path = os.path.realpath(path)
+    real_allowed = os.path.realpath(allowed_dir)
+    return real_path == real_allowed or real_path.startswith(real_allowed + os.sep)
+
+
 def index(request):
     return HttpResponse("Nothing here.")
 
@@ -205,6 +212,9 @@ def exportresult(req, task_id):
     return resp
 
 
+# 使用 @csrf_exempt 是因为此接口通过 API Token 认证而非浏览器 Session，
+# API 客户端无法提供 CSRF Token，因此通过 @api_token_required 进行鉴权保护
+@csrf_exempt
 @api_token_required
 def uploadlog(req):
     if "file" not in req.FILES:
@@ -212,12 +222,19 @@ def uploadlog(req):
 
     logfile = req.FILES.get("file", None)
 
-    logfile_name = logfile.name
+    # 仅取文件名，防止通过路径组件进行路径遍历
+    logfile_name = os.path.basename(logfile.name)
 
-    if os.path.exists(os.path.join(LOGS_PATH, logfile_name)):
+    logfile_path = os.path.join(LOGS_PATH, logfile_name)
+
+    # 验证目标路径仍在 LOGS_PATH 目录内
+    if not _is_path_under_allowed_dir(logfile_path, LOGS_PATH):
+        return HttpResponse("Ooooops, bad request...", status=400)
+
+    if os.path.exists(logfile_path):
         return HttpResponse("Ooooops, log file {} exist...".format(logfile_name))
 
-    with open(os.path.join(LOGS_PATH, logfile_name), 'wb') as f:
+    with open(logfile_path, 'wb') as f:
         for chunk in logfile.chunks():
             f.write(chunk)
 
