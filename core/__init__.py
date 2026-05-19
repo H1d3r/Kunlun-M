@@ -23,7 +23,7 @@ from django.utils import timezone
 from django.core.management import call_command
 from utils.log import log, logger, log_add, log_rm
 from utils.utils import get_mainstr_from_filename, random_generator
-from utils.status import get_scan_id
+from utils.status import get_scan_id, set_scan_id_provider
 from utils.web import upload_log
 from utils.file import load_kunlunmignore
 
@@ -39,6 +39,9 @@ from core.rule import RuleCheck, TamperCheck
 from core.scaffold import write_rule_file, write_tamper_file
 from core.console import KunlunInterpreter
 from web.index.models import ScanTask, check_and_new_project_id
+
+# 注册 scan_id 提供者回调，解耦 utils/status.py 对 web 层的直接依赖
+set_scan_id_provider(lambda: (lambda o: o.id if o else -1)(ScanTask.objects.order_by("-id").first()))
 
 from Kunlun_M.settings import LOGS_PATH, IS_OPEN_REMOTE_SERVER, REMOTE_URL
 
@@ -110,6 +113,7 @@ def main():
         parser_group_scan.add_argument('-l', '--log', dest='log', action='store', default=None, metavar='<log>', help='log name')
         parser_group_scan.add_argument('-lan', '--language', dest='language', action='store', default=None, help='set target language')
         parser_group_scan.add_argument('-b', '--blackpath', dest='black_path', action='store', default=None, help='black path list')
+        parser_group_scan.add_argument('-ht', '--html-template', dest='html_template', action='store', default=None, metavar='<template>', help='custom Jinja2 HTML template for report')
 
         # for api
         parser_group_scan.add_argument('-a', '--api', dest='api', action='store_true', default=False,
@@ -410,7 +414,7 @@ def main():
         s.save()
 
         try:
-            cli.start(args.target, args.format, args.output, args.special_rules, sid, args.language, args.tamper_name, args.black_path, args.unconfirm, args.unprecom)
+            cli.start(args.target, args.format, args.output, args.special_rules, sid, args.language, args.tamper_name, args.black_path, args.unconfirm, args.unprecom, template_path=args.html_template)
         except Exception as e:
             s.is_finished = 0
             s.finished_at = timezone.now()

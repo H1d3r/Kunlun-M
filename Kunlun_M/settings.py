@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/3.0/ref/settings/
 """
 
 import os
+import warnings
 import platform as platform_pack
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
@@ -207,9 +208,22 @@ WEB_UPLOAD_MAX_MB = 50
 WEB_PACKAGE_RETENTION_DAYS = 7
 WEB_SCAN_MAX_CONCURRENCY = 1
 
+# HTML 报告自定义模板路径（为空则使用内置默认模板）
+HTML_TEMPLATE_PATH = ''
+
 # vendor vuln scan
 WITH_VENDOR = False
 ACTIVE_SCA_SYSTEM = ['osv', 'depsdev', 'ossindex']
 # ['depsdev', 'ossindex', 'murphysec']
 MURPHYSEC_TOKEN = ""
+
+
+def check_security_settings():
+    """检查生产环境下的不安全配置并发出警告"""
+    if not DEBUG and API_TOKEN == "***":
+        warnings.warn(
+            "生产环境(DEBUG=False)下使用了默认 API_TOKEN，请尽快修改 API_TOKEN 配置以避免安全风险。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
