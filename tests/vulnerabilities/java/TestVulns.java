@@ -43,14 +43,6 @@ public class TestVulns extends HttpServlet {
         Class.forName(className);
     }
 
-    // CVI-6021: JDBC SQL Injection via string concat (regex-return-regex)
-    // match_name 提取 "user"，match 检查 executeQuery 中是否使用了 user
-    public void sqlInjectionRrr(HttpServletRequest request) throws SQLException {
-        String user = request.getParameter("user");
-        Statement stmt = conn.createStatement();
-        ResultSet rs = stmt.executeQuery("SELECT * FROM users WHERE name = '" + user + "'");
-    }
-
     // CVI-6022: XSS via Response (regex-return-regex)
     public void xssRrr(HttpServletRequest request) throws Exception {
         String user = request.getParameter("user");
@@ -71,7 +63,26 @@ public class TestVulns extends HttpServlet {
         HttpURLConnection conn = (HttpURLConnection) u.openConnection();
     }
 
-    // Safe code - uses PreparedStatement (should NOT trigger CVI-6021)
+    // CVI-6031: JDBC SQL Injection (function-param-controllable)
+    public void sqlInjectionFpc(HttpServletRequest request) throws SQLException {
+        String user = request.getParameter("user");
+        Statement stmt = conn.createStatement();
+        ResultSet rs = stmt.executeQuery("SELECT * FROM users WHERE name = '" + user + "'");
+    }
+
+    // CVI-6032: Command Injection (function-param-controllable)
+    public void commandInjectionFpc(HttpServletRequest request) throws Exception {
+        String cmd = request.getParameter("cmd");
+        Runtime.getRuntime().exec(cmd);
+    }
+
+    // CVI-6033: File Path Traversal (function-param-controllable)
+    public void pathTraversalFpc(HttpServletRequest request) throws Exception {
+        String filename = request.getParameter("file");
+        FileInputStream fis = new FileInputStream(filename);
+    }
+
+    // Safe code - uses PreparedStatement
     public void safeCode(HttpServletRequest request) throws SQLException {
         String user = request.getParameter("user");
         PreparedStatement pstmt = conn.prepareStatement("SELECT * FROM users WHERE name = ?");

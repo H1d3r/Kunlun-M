@@ -387,7 +387,7 @@ class VulnerabilityMatcher(object):
             return False, 'Exception'
 
     def _scan_java(self):
-        """Java 扫描（Phase 1：仅支持 only-regex 和 regex-return-regex）"""
+        """Java 扫描（支持 only-regex、regex-return-regex、function-param-controllable）"""
         try:
             ast = CAST(self.rule_match, self.target_directory, self.file_path, self.line_number,
                        self.code_content, files=self.files, rule_class=self.single_rule,
@@ -401,10 +401,32 @@ class VulnerabilityMatcher(object):
                 logger.debug("[CVI-{cvi}] [REGEX-RETURN-REGEX]".format(cvi=self.cvi))
                 return True, 'Regex-return-regex'
 
+            elif self.rule_match_mode == const.mm_function_param_controllable:
+                rule_match = self.rule_match.strip('()').split('|')
+                logger.debug('[RULE_MATCH] {r}'.format(r=rule_match))
+                try:
+                    result = java_scan_parser(rule_match, self.line_number, self.file_path,
+                                              repair_functions=self.repair_functions,
+                                              controlled_params=self.controlled_list)
+                    logger.debug('[AST] [RET] {c}'.format(c=result))
+                    if len(result) > 0:
+                        parsed = self._parse_ast_result(result)
+                        if parsed is not None:
+                            return parsed
+                    else:
+                        logger.debug(
+                            '[AST] Parser failed / vulnerability parameter is not controllable {r}'.format(
+                                r=result))
+                        return False, 'Can\'t parser'
+                except Exception:
+                    exc_msg = traceback.format_exc()
+                    logger.warning(exc_msg)
+                    raise
+
             else:
                 logger.warn(
-                    "[CVI-{cvi}] Java currently only supports only-regex and regex-return-regex".format(
-                        cvi=self.cvi))
+                    "[CVI-{cvi}] Java unsupported match mode: {m}".format(
+                        cvi=self.cvi, m=self.rule_match_mode))
                 return False, 'Unsupport Match'
 
         except Exception as e:
