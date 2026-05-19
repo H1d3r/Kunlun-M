@@ -6,50 +6,72 @@ import javax.servlet.http.*;
 
 public class TestVulns extends HttpServlet {
 
-    // CVI-4001: SQL Injection
+    // CVI-6001: SQL Injection (only-regex)
     public void sqlInjection(HttpServletRequest request) throws SQLException {
         String user = request.getParameter("user");
         Statement stmt = conn.createStatement();
         ResultSet rs = stmt.executeQuery("SELECT * FROM users WHERE name = '" + user + "'");
     }
 
-    // CVI-4003: Command Injection
+    // CVI-6003: Command Injection (only-regex)
     public void commandInjection(HttpServletRequest request) throws Exception {
         String cmd = request.getParameter("cmd");
         Runtime.getRuntime().exec(cmd);
     }
 
-    // CVI-4005: Unsafe Deserialization
+    // CVI-6005: Unsafe Deserialization (only-regex)
     public void unsafeDeserialization(HttpServletRequest request) throws Exception {
         ObjectInputStream ois = new ObjectInputStream(new FileInputStream("data.ser"));
         Object obj = ois.readObject();
     }
 
-    // CVI-4009: Hardcoded Password
+    // CVI-6009: Hardcoded Password (only-regex)
     public void hardcodedPassword() {
         String password = "admin123456";
         String apiKey = "sk-abc123def456";
     }
 
-    // CVI-4016: Insecure Random
+    // CVI-6016: Insecure Random (only-regex)
     public void insecureRandom() {
         Random rand = new Random();
         int token = rand.nextInt();
     }
 
-    // CVI-4017: Log4Shell
-    public void log4Shell(HttpServletRequest request) {
-        String input = request.getParameter("data");
-        logger.error("User input: " + input);
-    }
-
-    // CVI-4018: Unsafe Reflection
+    // CVI-6018: Unsafe Reflection (only-regex)
     public void unsafeReflection(HttpServletRequest request) throws Exception {
         String className = request.getParameter("class");
         Class.forName(className);
     }
 
-    // Safe code (should NOT match)
+    // CVI-6021: JDBC SQL Injection via string concat (regex-return-regex)
+    // match_name 提取 "user"，match 检查 executeQuery 中是否使用了 user
+    public void sqlInjectionRrr(HttpServletRequest request) throws SQLException {
+        String user = request.getParameter("user");
+        Statement stmt = conn.createStatement();
+        ResultSet rs = stmt.executeQuery("SELECT * FROM users WHERE name = '" + user + "'");
+    }
+
+    // CVI-6022: XSS via Response (regex-return-regex)
+    public void xssRrr(HttpServletRequest request) throws Exception {
+        String user = request.getParameter("user");
+        response.getWriter().print("Hello " + user);
+    }
+
+    // CVI-6023: ProcessBuilder Command Injection (regex-return-regex)
+    public void processBuilderRrr(HttpServletRequest request) throws Exception {
+        String cmd = request.getParameter("cmd");
+        ProcessBuilder pb = new ProcessBuilder(cmd);
+        pb.start();
+    }
+
+    // CVI-6024: SSRF via URL (regex-return-regex)
+    public void ssrfRrr(HttpServletRequest request) throws Exception {
+        String url = request.getParameter("url");
+        URL u = new URL(url);
+        HttpURLConnection conn = (HttpURLConnection) u.openConnection();
+    }
+
+    // Safe code - uses PreparedStatement (should NOT trigger CVI-6021)
     public void safeCode(HttpServletRequest request) throws SQLException {
         String user = request.getParameter("user");
         PreparedStatement pstmt = conn.prepareStatement("SELECT * FROM users WHERE name = ?");
