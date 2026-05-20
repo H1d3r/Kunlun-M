@@ -30,7 +30,7 @@ class CVI_6008():
 
         # 部分配置
         self.match_mode = "only-regex"
-        self.match = [r"Cipher\.getInstance\(\s*\"(?:DES|RC4|Blowfish)\")"]
+        self.match = [r'Cipher\.getInstance\(\s*"(?:DES|RC4|Blowfish)"\)']
 
         # for solidity
         self.match_name = None

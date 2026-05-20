@@ -328,8 +328,8 @@ class SingleRule(object):
                 else:
                     result = None
             except Exception as e:
-                traceback.print_exc()
                 logger.debug('match exception ({e})'.format(e=e))
+                logger.debug(traceback.format_exc())
                 return None
 
         elif self.sr.match_mode == const.mm_regex_param_controllable:
@@ -343,8 +343,8 @@ class SingleRule(object):
                 else:
                     result = None
             except Exception as e:
-                traceback.print_exc()
                 logger.debug('match exception ({e})'.format(e=e))
+                logger.debug(traceback.format_exc())
                 return None
 
         elif self.sr.match_mode == const.mm_function_param_controllable:
@@ -371,8 +371,8 @@ class SingleRule(object):
                 else:
                     result = None
             except Exception as e:
-                traceback.print_exc()
                 logger.debug('match exception ({e})'.format(e=e))
+                logger.debug(traceback.format_exc())
                 return None
 
         elif self.sr.match_mode == const.mm_regex_return_regex:
@@ -392,8 +392,8 @@ class SingleRule(object):
                 if not result:
                     result = None
             except Exception as e:
-                traceback.print_exc()
                 logger.debug('match exception ({e})'.format(e=e))
+                logger.debug(traceback.format_exc())
                 return None
 
         elif self.sr.match_mode == const.sp_crx_keyword_match:
@@ -412,8 +412,8 @@ class SingleRule(object):
                 if not result:
                     result = None
             except Exception as e:
-                traceback.print_exc()
                 logger.debug('match exception ({e})'.format(e=e))
+                logger.debug(traceback.format_exc())
                 return None
 
         elif self.sr.match_mode == const.file_path_regex_match:
@@ -430,8 +430,8 @@ class SingleRule(object):
                 if not result:
                     result = None
             except Exception as e:
-                traceback.print_exc()
                 logger.debug('match exception ({e})'.format(e=e))
+                logger.debug(traceback.format_exc())
                 return None
 
         else:
