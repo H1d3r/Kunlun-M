@@ -325,7 +325,8 @@ def _find_annotated_param_names(method_node):
     return annotated_params
 
 
-def _is_passthrough_method(method_node, param_name, repair_functions, class_methods=None, depth=0, max_depth=3):
+def _is_passthrough_method(method_node, param_name, repair_functions, class_methods=None, depth=0, max_depth=3,
+                            global_methods=None):
     """
     检查方法的某个参数是否被直接透传返回（或经安全方法处理后返回）
     
@@ -333,12 +334,19 @@ def _is_passthrough_method(method_node, param_name, repair_functions, class_meth
     1. 方法体有 ReturnStatement，返回的是该参数或其方法调用
     2. 返回链上没有经过修复函数
     
+    支持跨文件递归查找：当 return otherMethod(s) 中的 otherMethod 不在当前文件时，
+    去 global_methods 中查找。
+    
+    支持嵌套调用透传：return obj.method(s.trim()) 
+    当 s 是参数时，检查 obj.method 的第一个参数是否透传。
+    
     :param method_node: 方法 AST 节点
     :param param_name: 参数名
     :param repair_functions: 修复函数列表
     :param class_methods: 同类其他方法的 dict（用于递归分析）
     :param depth: 当前递归深度
     :param max_depth: 最大递归深度
+    :param global_methods: 跨文件全局方法映射
     :return: True 表示参数被透传
     """
     if depth >= max_depth or not method_node or not method_node.body:
@@ -359,27 +367,51 @@ def _is_passthrough_method(method_node, param_name, repair_functions, class_meth
                 if expr.member in repair_functions:
                     return False
 
-                # qualifier 是参数名
+                # qualifier 是参数名 → 直接透传
                 if isinstance(expr.qualifier, str) and expr.qualifier == param_name:
                     return True
                 if isinstance(expr.qualifier, javalang.tree.MemberReference):
                     if expr.qualifier.member == param_name:
                         return True
 
-                # 递归检查：返回的是另一个同类方法调用
-                # 如 return otherMethod(s) → 检查 otherMethod
-                if class_methods and expr.member in class_methods and depth + 1 < max_depth:
-                    # 检查参数是否是传入的 param_name
-                    arg_is_param = False
-                    if expr.arguments:
-                        for arg in expr.arguments:
-                            if isinstance(arg, javalang.tree.MemberReference) and arg.member == param_name:
-                                arg_is_param = True
-                    if arg_is_param:
-                        target_method = class_methods[expr.member]
-                        if _is_passthrough_method(target_method, param_name, repair_functions,
-                                                  class_methods, depth + 1, max_depth):
-                            return True
+                # 嵌套调用透传：return obj.method(s.trim())
+                # 检查参数中是否包含对 param_name 的引用
+                called_name = expr.member
+                if expr.arguments and depth + 1 < max_depth:
+                    # 找到哪些参数位置包含对 param_name 的引用
+                    param_has_ref = False
+                    for arg in expr.arguments:
+                        refs = _collect_member_references(arg)
+                        if param_name in refs:
+                            param_has_ref = True
+                            break
+                    
+                    if param_has_ref:
+                        # 1. 先在同文件方法映射中找
+                        found_target = False
+                        if class_methods and called_name in class_methods:
+                            target_method = class_methods[called_name]
+                            if target_method.parameters:
+                                target_param_name = target_method.parameters[0].name
+                                if _is_passthrough_method(target_method, target_param_name, repair_functions,
+                                                          class_methods, depth + 1, max_depth,
+                                                          global_methods=global_methods):
+                                    return True
+                            found_target = True
+                        
+                        # 2. 去全局映射中找（跨文件递归）
+                        if not found_target and global_methods:
+                            call_arg_count = len(expr.arguments) if expr.arguments else 0
+                            key = (called_name, call_arg_count)
+                            if key in global_methods:
+                                for remote_tree, remote_method, remote_filepath in global_methods[key]:
+                                    if remote_method.parameters:
+                                        target_param_name = remote_method.parameters[0].name
+                                        remote_cm = _build_class_method_map(remote_tree)
+                                        if _is_passthrough_method(remote_method, target_param_name, repair_functions,
+                                                                  remote_cm, depth + 1, max_depth,
+                                                                  global_methods=global_methods):
+                                            return True
 
     return False
 
@@ -392,18 +424,162 @@ def _build_class_method_map(tree):
     return class_methods
 
 
-def _propagate_controllable_across_calls(method_node, tree, controllable, repair_functions, max_depth=3):
+def _build_global_method_map(ast_obj, current_filepath):
+    """
+    遍历所有 Java 文件的 AST，构建全局方法映射（用于跨文件传播）
+    
+    返回: {(method_name, param_count): [(tree, method_node, filepath), ...]}
+    - method_name: 方法名
+    - param_count: 参数数量（用于消歧义）
+    - tree: 文件的 AST 树
+    - method_node: 方法声明节点
+    - filepath: 文件路径
+    """
+    global_methods = {}
+    
+    if ast_obj is None or not hasattr(ast_obj, 'pre_result'):
+        return global_methods
+    
+    for filepath, file_data in ast_obj.pre_result.items():
+        # 跳过非 Java 文件
+        if not filepath.endswith('.java'):
+            continue
+        
+        tree = file_data.get('ast_nodes')
+        if not tree:
+            continue
+        
+        try:
+            for _, node in tree.filter(javalang.tree.MethodDeclaration):
+                param_count = len(node.parameters) if node.parameters else 0
+                key = (node.name, param_count)
+                if key not in global_methods:
+                    global_methods[key] = []
+                global_methods[key].append((tree, node, filepath))
+        except Exception:
+            continue
+    
+    return global_methods
+
+
+def _check_caller_controllability(current_method, ast_obj, repair_functions, global_methods=None, depth=0, max_depth=3):
+    """
+    反向调用链分析：检查当前方法的调用者是否传入了可控参数。
+    
+    当当前方法中没有 request source（controllable 为空）时，
+    通过全局方法映射找到所有调用当前方法的地方，检查调用者传的参数是否可控。
+    
+    支持递归：如果调用者本身也没有 request source，递归检查调用者的调用者。
+    
+    返回: set of 参数名 → 这些参数被调用者传入了可控数据
+    """
+    controllable_params = set()
+    
+    if depth >= max_depth:
+        return controllable_params
+    
+    if ast_obj is None or not hasattr(ast_obj, 'pre_result'):
+        return controllable_params
+    
+    if not current_method.parameters:
+        return controllable_params
+    
+    current_method_name = current_method.name
+    
+    # 遍历所有文件，找到调用当前方法的地方
+    for filepath, file_data in ast_obj.pre_result.items():
+        if not filepath.endswith('.java'):
+            continue
+        
+        tree = file_data.get('ast_nodes')
+        if not tree:
+            continue
+        
+        try:
+            # 找到所有方法声明，检查其方法体中是否调用了 current_method_name
+            for _, caller_method in tree.filter(javalang.tree.MethodDeclaration):
+                if not caller_method.body:
+                    continue
+                
+                for stmt in caller_method.body:
+                    call_expr = None
+                    
+                    # 查找 LocalVariableDeclaration 中的方法调用
+                    if isinstance(stmt, javalang.tree.LocalVariableDeclaration):
+                        for declarator in stmt.declarators:
+                            if not declarator.initializer:
+                                continue
+                            init = declarator.initializer
+                            if isinstance(init, javalang.tree.MethodInvocation):
+                                if init.member == current_method_name and init.arguments:
+                                    call_expr = init
+                    
+                    # 查找 ReturnStatement 中的方法调用
+                    elif isinstance(stmt, javalang.tree.ReturnStatement) and stmt.expression:
+                        expr = stmt.expression
+                        if isinstance(expr, javalang.tree.MethodInvocation):
+                            if expr.member == current_method_name and expr.arguments:
+                                call_expr = expr
+                    
+                    if call_expr is None:
+                        continue
+                    
+                    # 找到调用！分析调用者方法的可控变量
+                    request_vars = _find_request_var_names(caller_method)
+                    
+                    caller_source_lines = []
+                    try:
+                        with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+                            caller_source_lines = f.readlines()
+                    except Exception:
+                        pass
+                    
+                    caller_controllable = _collect_controllable_vars(
+                        caller_method, request_vars, source_lines=caller_source_lines)
+                    
+                    # 跨方法传播（含跨文件）
+                    if global_methods:
+                        _propagate_controllable_across_calls(
+                            caller_method, tree, caller_controllable, repair_functions,
+                            global_methods=global_methods)
+                    
+                    # 如果调用者也没有可控变量，递归反向检查
+                    if not caller_controllable and depth + 1 < max_depth:
+                        reverse_params = _check_caller_controllability(
+                            caller_method, ast_obj, repair_functions, 
+                            global_methods=global_methods, depth=depth+1, max_depth=max_depth)
+                        if reverse_params:
+                            caller_controllable.update(reverse_params)
+                    
+                    # 检查调用参数是否可控
+                    for arg in call_expr.arguments:
+                        refs = _collect_member_references(arg)
+                        if set(refs) & caller_controllable:
+                            for param in current_method.parameters:
+                                controllable_params.add(param.name)
+                                logger.debug("[AST][Java] Reverse cross-file (depth={}): param '{}' of {}() is controllable (called from {}:{})".format(
+                                    depth, param.name, current_method_name, filepath,
+                                    caller_method.position.line if caller_method.position else '?'))
+                            return controllable_params  # 已找到可控来源，提前返回
+        except Exception:
+            continue
+    
+    return controllable_params
+
+
+def _propagate_controllable_across_calls(method_node, tree, controllable, repair_functions, 
+                                          max_depth=3, global_methods=None):
     """
     跨方法污点传播：分析方法体中的方法调用赋值，追踪可控变量传递
     
-    处理模式：String data = someMethod(input) where input is controllable
-    如果 someMethod 透传了参数，则 data 也标记为可控
+    支持同文件和跨文件方法查找。
     
     :param method_node: 当前方法 AST 节点
     :param tree: 整个文件的 AST 树（用于查找被调方法）
     :param controllable: 当前可控变量集合（会被原地修改）
     :param repair_functions: 修复函数列表
     :param max_depth: 传播递归深度上限
+    :param global_methods: 跨文件全局方法映射 {(name, param_count): [(tree, node, path), ...]}
     """
     if not method_node.body:
         return
@@ -445,25 +621,54 @@ def _propagate_controllable_across_calls(method_node, tree, controllable, repair
                                 break
 
                     if call_args_controllable:
-                        # 检查被调方法是否是透传
                         called_method_name = init.member
+                        call_arg_count = len(init.arguments) if init.arguments else 0
+                        
+                        # 1. 先在同文件中查找
+                        found = False
                         if called_method_name in class_methods:
                             called_method = class_methods[called_method_name]
-                            # 找到被传的可控参数名
                             if called_method.parameters:
-                                # 简单情况：第一个参数
                                 for arg in init.arguments:
                                     refs = _collect_member_references(arg)
                                     for ref in refs:
                                         if ref in controllable:
                                             if _is_passthrough_method(called_method, called_method.parameters[0].name,
-                                                                     repair_functions, class_methods, 0, max_depth):
+                                                                     repair_functions, class_methods, 0, max_depth,
+                                                                     global_methods=global_methods):
                                                 controllable.add(target_var)
                                                 logger.debug("[AST][Java] Cross-method propagation: {} → {} via {}()".format(
                                                     ref, target_var, called_method_name))
                                                 changed = True
+                                                found = True
                                                 break
-                                    if target_var in controllable:
+                                    if found:
+                                        break
+
+                        # 2. 同文件没找到，去全局映射中查找（跨文件传播）
+                        if not found and global_methods:
+                            key = (called_method_name, call_arg_count)
+                            if key in global_methods:
+                                for remote_tree, remote_method, remote_filepath in global_methods[key]:
+                                    if remote_method.parameters:
+                                        for arg in init.arguments:
+                                            refs = _collect_member_references(arg)
+                                            for ref in refs:
+                                                if ref in controllable:
+                                                    # 构建远程文件的方法映射（用于递归查找）
+                                                    remote_class_methods = _build_class_method_map(remote_tree)
+                                                    if _is_passthrough_method(remote_method, remote_method.parameters[0].name,
+                                                                             repair_functions, remote_class_methods, 0, max_depth,
+                                                                             global_methods=global_methods):
+                                                        controllable.add(target_var)
+                                                        logger.debug("[AST][Java] Cross-FILE propagation: {} → {} via {}() (from {})".format(
+                                                            ref, target_var, called_method_name, remote_filepath))
+                                                        changed = True
+                                                        found = True
+                                                        break
+                                            if found:
+                                                break
+                                    if found:
                                         break
 
                 # 模式2: String x = y + z (字符串拼接), 其中 y 或 z 可控
@@ -717,8 +922,18 @@ def scan_parser(sensitive_func, vul_lineno, file_path, repair_functions=[], cont
         if controlled_params:
             controllable.update(controlled_params)
 
-        # 跨方法污点传播
-        _propagate_controllable_across_calls(method, _nodes, controllable, repair_functions)
+        # 跨方法污点传播（含跨文件）
+        global_methods = _build_global_method_map(_ast_object_singleton, file_path)
+        _propagate_controllable_across_calls(method, _nodes, controllable, repair_functions,
+                                              global_methods=global_methods)
+
+        # 反向调用链分析：当没有 request source 时，检查调用者是否传入可控数据
+        if not controllable:
+            reverse_params = _check_caller_controllability(
+                method, _ast_object_singleton, repair_functions, global_methods=global_methods)
+            if reverse_params:
+                controllable.update(reverse_params)
+                logger.debug("[AST][Java] Reverse cross-file: added controllable params: {}".format(reverse_params))
 
         logger.debug("[AST][Java] Controllable vars: {}".format(controllable))
 
