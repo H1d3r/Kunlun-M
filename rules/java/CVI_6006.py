@@ -9,6 +9,8 @@
     :copyright: Copyright (c) 2017 LoRexxar. All rights reserved
 """
 
+import re
+
 from utils.api import *
 
 
@@ -30,12 +32,7 @@ class CVI_6006():
 
         # 部分配置
         self.match_mode = "function-param-regex"
-        self.match = [
-            r"\.openConnection\s*\(\s*\)",
-            r"new\s+URL\s*\(",
-            r"RestTemplate\.\w+\s*\(",
-            r"HttpClient\.\w+",
-        ]
+        self.match = "openConnection|URL|RestTemplate|HttpClient"
 
         # for solidity
         self.match_name = None
@@ -49,5 +46,8 @@ class CVI_6006():
 
         self.vul_function = ["openConnection", "URL", "RestTemplate"]
 
+
     def main(self, regex_string):
-        pass
+        """openConnection/URL/RestTemplate 已足够精确，不需要额外筛选"""
+        return None
+

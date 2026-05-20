@@ -1,48 +1,34 @@
 # -*- coding: utf-8 -*-
 
 """
-    Java Fastjson Deserialization (function-param-regex)
+    Java Fastjson Deserialization Rule (AST-enhanced)
     ~~~~
-    :author:    KunLun-M
-    :homepage:  https://github.com/LoRexxar/Kunlun-M
-    :license:   MIT, see LICENSE for more details.
-    :copyright: Copyright (c) 2017 LoRexxar. All rights reserved
 """
 
 from utils.api import *
 
 
 class CVI_6037():
-    """
-    rule class
-    """
-
     def __init__(self):
         self.svid = 6037
         self.language = "java"
         self.author = "KunLun-M"
         self.vulnerability = "Fastjson Deserialization"
-        self.description = "使用了Fastjson的JSON.parseObject/parse方法进行反序列化，若未启用safeMode或AutoType黑名单，可能导致远程代码执行。建议升级Fastjson到1.2.83+或使用Fastjson2。通过AST分析追踪数据流，检测JSON解析输入是否来自用户可控数据。"
-        self.level = 9
+        self.description = "Fastjson反序列化用户可控JSON可能导致远程代码执行"
+        self.level = 4
 
-        # status
         self.status = True
-
-        # 部分配置
         self.match_mode = "function-param-regex"
-        self.match = [r"JSON\.(?:parseObject|parse)\s*\("]
-
-        # for solidity
+        self.match = "parseObject|parse"
         self.match_name = None
         self.black_list = None
-
-        # for chrome ext
         self.keyword = None
-
-        # for regex
-        self.unmatch = [r"safeMode", r"AutoTypeSafeCache", r"ParserConfig\.getGlobalInstance\(\)\.setAutoTypeSupport\(false\)"]
-
+        self.unmatch = [r"SafeMode", r"autoTypeFilter", r"ParserConfig.getGlobalInstance\\(\\).setAutoTypeSupport"]
         self.vul_function = ["parseObject", "parse"]
 
     def main(self, regex_string):
-        pass
+        """二次筛选：只保留 JSON/Fastjson 上下文"""
+        code = regex_string.strip() if isinstance(regex_string, str) else str(regex_string)
+        if not re.search(r'JSON|json|fastjson|alibaba', code, re.I):
+            return False
+        return None

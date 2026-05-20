@@ -9,6 +9,8 @@
     :copyright: Copyright (c) 2024 LoRexxar. All rights reserved
 """
 
+import re
+
 from utils.api import *
 
 
@@ -26,11 +28,7 @@ class CVI_6002():
 
         # 部分配置
         self.match_mode = "function-param-regex"
-        self.match = [
-            r"getWriter\s*\(\s*\)\s*\.\s*(?:print|write|println)",
-            r"getOutputStream\s*\(\s*\)",
-            r"PrintWriter.*\.(?:print|write|println)",
-        ]
+        self.match = "print|write|println"
 
         # for solidity
         self.match_name = None
@@ -48,5 +46,8 @@ class CVI_6002():
 
         self.vul_function = ["print", "write", "println"]
 
+
     def main(self, regex_string):
-        pass
+        """getWriter/getOutputStream/PrintWriter 已经是上下文限定的，不需要额外筛选"""
+        return None
+

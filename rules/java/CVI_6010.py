@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 """
-    Java Log Injection Rule
+    Java Log Injection Rule (AST-enhanced)
     ~~~~
     :author:    KunLun-M
     :homepage:  https://github.com/LoRexxar/Kunlun-M
@@ -18,11 +18,12 @@ class CVI_6010():
     """
 
     def __init__(self):
+
         self.svid = 6010
         self.language = "java"
         self.author = "KunLun-M"
         self.vulnerability = "Log Injection"
-        self.description = "将用户输入直接拼接到日志语句中，未进行换行符过滤或编码，可能导致日志注入漏洞。通过AST分析追踪数据流，检测用户输入是否流入日志方法。"
+        self.description = "用户输入直接拼接到日志中可能导致日志注入攻击"
         self.level = 3
 
         # status
@@ -30,7 +31,7 @@ class CVI_6010():
 
         # 部分配置
         self.match_mode = "function-param-regex"
-        self.match = [r"log(?:ger)?\.(?:info|debug|warn|error|fatal)\s*\("]
+        self.match = "info|debug|warn|error|fatal"
 
         # for solidity
         self.match_name = None
@@ -40,9 +41,12 @@ class CVI_6010():
         self.keyword = None
 
         # for regex
-        self.unmatch = [r"sanitize", r"encode", r"escape", r"replace\(\"\\n\"", r"replace\(\"\\r\""]
+        self.unmatch = None
 
         self.vul_function = ["info", "debug", "warn", "error", "fatal"]
 
+
     def main(self, regex_string):
-        pass
+        """log 方法交给 AST 分析判断上下文"""
+        return None
+

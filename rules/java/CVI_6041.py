@@ -1,48 +1,34 @@
 # -*- coding: utf-8 -*-
 
 """
-    SSTI (Server-Side Template Injection) (AST-enhanced)
+    Java SSTI Rule (AST-enhanced)
     ~~~~
-    :author:    KunLun-M
-    :homepage:  https://github.com/LoRexxar/Kunlun-M
-    :license:   MIT, see LICENSE for more details.
-    :copyright: Copyright (c) 2017 LoRexxar. All rights reserved
 """
 
 from utils.api import *
 
 
 class CVI_6041():
-    """
-    rule class
-    """
-
     def __init__(self):
         self.svid = 6041
         self.language = "java"
         self.author = "KunLun-M"
-        self.vulnerability = "Server-Side Template Injection (SSTI)"
-        self.description = "用户输入直接用于模板引擎渲染（FreeMarker/Velocity/Thymeleaf），存在SSTI/RCE风险"
-        self.level = 9
+        self.vulnerability = "SSTI"
+        self.description = "用户输入进入模板引擎渲染可能导致服务端模板注入"
+        self.level = 4
 
-        # status
         self.status = True
-
-        # 部分配置
         self.match_mode = "function-param-regex"
         self.match = "process|evaluate"
-
-        # for solidity
         self.match_name = None
         self.black_list = None
-
-        # for chrome ext
         self.keyword = None
-
-        # for regex
-        self.unmatch = [r"autoEscape", r"escapeHtml", r"StringEscapeUtils"]
-
+        self.unmatch = [r"AutoEscaping", r"sandbox", r"SecurityManager"]
         self.vul_function = ["process", "evaluate"]
 
     def main(self, regex_string):
-        pass
+        """二次筛选：只保留模板引擎上下文"""
+        code = regex_string.strip() if isinstance(regex_string, str) else str(regex_string)
+        if not re.search(r'Template|Velocity|FreeMarker|freemarker|Thymeleaf|StringTemplateLoader|JdbcTemplate', code, re.I):
+            return False
+        return None

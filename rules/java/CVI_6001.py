@@ -9,6 +9,8 @@
     :copyright: Copyright (c) 2017 LoRexxar. All rights reserved
 """
 
+import re
+
 from utils.api import *
 
 
@@ -30,13 +32,7 @@ class CVI_6001():
 
         # 部分配置
         self.match_mode = "function-param-regex"
-        self.match = [
-            r"createStatement\s*\(\s*\)",
-            r"\.executeQuery\s*\(",
-            r"\.executeUpdate\s*\(",
-            r"\.execute\s*\(",
-            r"\.addBatch\s*\(",
-        ]
+        self.match = "createStatement|executeQuery|executeUpdate|execute|addBatch"
 
         # for solidity
         self.match_name = None
@@ -54,5 +50,35 @@ class CVI_6001():
 
         self.vul_function = ["executeQuery", "executeUpdate", "execute", "addBatch"]
 
+
     def main(self, regex_string):
-        pass
+        """
+        二次筛选：检查匹配到的代码行是否真正属于危险的SQL执行调用，
+        排除PreparedStatement等安全写法。
+        """
+        if not isinstance(regex_string, str):
+            regex_string = str(regex_string)
+
+        # 排除安全的 PreparedStatement/prepareStatement 写法
+        safe_patterns = [
+            r"PreparedStatement",
+            r"prepareStatement",
+            r"@Query",
+        ]
+        for safe_pat in safe_patterns:
+            if re.search(safe_pat, regex_string):
+                return False
+
+        # 确认包含危险的 Statement 执行调用（不要求 . 前缀）
+        dangerous_patterns = [
+            r"createStatement\s*\(\s*\)",
+            r"executeQuery\s*\(",
+            r"executeUpdate\s*\(",
+            r"execute\s*\(",
+            r"addBatch\s*\(",
+        ]
+        for pat in dangerous_patterns:
+            if re.search(pat, regex_string):
+                return True
+
+        return None

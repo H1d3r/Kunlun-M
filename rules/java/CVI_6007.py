@@ -9,6 +9,8 @@
     :copyright: Copyright (c) 2017 LoRexxar. All rights reserved
 """
 
+import re
+
 from utils.api import *
 
 
@@ -30,12 +32,7 @@ class CVI_6007():
 
         # 部分配置
         self.match_mode = "function-param-regex"
-        self.match = [
-            r"(?:DocumentBuilderFactory|SAXParserFactory|XMLInputFactory)\.newInstance\s*\(\s*\)",
-            r"SAXParser\s*\.\s*parse\s*\(",
-            r"DocumentBuilder\s*\.\s*parse\s*\(",
-            r"XMLReader\s*\.\s*parse\s*\(",
-        ]
+        self.match = "DocumentBuilderFactory|SAXParserFactory|XMLInputFactory|SAXParser|DocumentBuilder|XMLReader"
 
         # for solidity
         self.match_name = None
@@ -53,5 +50,13 @@ class CVI_6007():
 
         self.vul_function = ["parse", "DocumentBuilderFactory", "SAXParserFactory", "XMLInputFactory"]
 
+
     def main(self, regex_string):
-        pass
+        """XML 解析器工厂名已足够精确，不需要额外筛选"""
+        if not isinstance(regex_string, str):
+            regex_string = str(regex_string)
+        # 排除已禁用外部实体的写法
+        if re.search(r'FEATURE_SECURE_PROCESSING|disallow-doctype-decl|setExpandEntityReferences\(false\)', regex_string):
+            return False
+        return None
+

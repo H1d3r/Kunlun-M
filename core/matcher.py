@@ -409,7 +409,18 @@ class VulnerabilityMatcher(object):
                 return True, 'Regex-return-regex'
 
             elif self.rule_match_mode == const.mm_function_param_controllable:
-                # 优先使用 vul_function 列表做 AST 分析
+                # 调用规则的 main() 做二次筛选（类似 PHP cast.py:212 的 self.sr.main()）
+                main_result = self.single_rule.main(self.code_content)
+                if main_result is not None and main_result is not False:
+                    # main() 返回非 None/False → 通过二次筛选，继续 AST 分析
+                    # 如果 main() 返回列表（如参数列表），可用于进一步过滤
+                    pass
+                elif main_result is False:
+                    logger.debug('[CVI-{cvi}] main() returned False, skip'.format(cvi=self.cvi))
+                    return False, 'Filtered by rule.main()'
+                # main() 返回 None → 不做二次筛选（默认 pass），继续 AST 分析
+
+                # 确定用于 AST 分析的函数名列表
                 if (hasattr(self.single_rule, 'vul_function') and
                     isinstance(self.single_rule.vul_function, list) and
                     len(self.single_rule.vul_function) > 0):

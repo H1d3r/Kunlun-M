@@ -9,6 +9,8 @@
     :copyright: Copyright (c) 2017 LoRexxar. All rights reserved
 """
 
+import re
+
 from utils.api import *
 
 
@@ -30,10 +32,7 @@ class CVI_6003():
 
         # 部分配置
         self.match_mode = "function-param-regex"
-        self.match = [
-            r"Runtime\.getRuntime\s*\(\s*\)\s*\.exec\s*\(",
-            r"new\s+ProcessBuilder\s*\(",
-        ]
+        self.match = "exec|ProcessBuilder"
 
         # for solidity
         self.match_name = None
@@ -47,5 +46,16 @@ class CVI_6003():
 
         self.vul_function = ["exec", "ProcessBuilder"]
 
+
     def main(self, regex_string):
-        pass
+        """二次筛选：确认 Runtime.exec/ProcessBuilder 调用"""
+        if not isinstance(regex_string, str):
+            regex_string = str(regex_string)
+        # exec 需要确认是 Runtime.exec 上下文
+        if re.search(r'exec\s*\(', regex_string):
+            if not re.search(r'Thread|Executor|pool|execute', regex_string, re.I):
+                return True
+            return False
+        if re.search(r'ProcessBuilder', regex_string):
+            return True
+        return None

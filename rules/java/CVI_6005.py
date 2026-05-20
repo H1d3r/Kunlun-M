@@ -9,6 +9,8 @@
     :copyright: Copyright (c) 2017 LoRexxar. All rights reserved
 """
 
+import re
+
 from utils.api import *
 
 
@@ -30,11 +32,7 @@ class CVI_6005():
 
         # 部分配置
         self.match_mode = "function-param-regex"
-        self.match = [
-            r"\.readObject\s*\(\s*\)",
-            r"new\s+ObjectInputStream\s*\(",
-            r"new\s+XMLDecoder\s*\(",
-        ]
+        self.match = "readObject|ObjectInputStream|XMLDecoder"
 
         # for solidity
         self.match_name = None
@@ -52,5 +50,13 @@ class CVI_6005():
 
         self.vul_function = ["readObject", "ObjectInputStream"]
 
+
     def main(self, regex_string):
-        pass
+        """readObject/ObjectInputStream 已足够精确，不需要额外筛选"""
+        if not isinstance(regex_string, str):
+            regex_string = str(regex_string)
+        # 排除安全过滤类
+        if re.search(r'ObjectInputFilter|ValidatingObjectInputStream|SafeObjectInputStream', regex_string):
+            return False
+        return None
+

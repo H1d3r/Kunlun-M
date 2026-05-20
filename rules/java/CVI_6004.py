@@ -9,6 +9,8 @@
     :copyright: Copyright (c) 2017 LoRexxar. All rights reserved
 """
 
+import re
+
 from utils.api import *
 
 
@@ -30,7 +32,7 @@ class CVI_6004():
 
         # 部分配置
         self.match_mode = "function-param-regex"
-        self.match = [r"new\s+(?:File|FileInputStream|FileOutputStream|FileReader|FileWriter)\s*\("]
+        self.match = "File|FileInputStream|FileOutputStream|FileReader|FileWriter"
 
         # for solidity
         self.match_name = None
@@ -44,5 +46,13 @@ class CVI_6004():
 
         self.vul_function = ["File", "FileInputStream", "FileOutputStream", "FileReader", "FileWriter"]
 
+
     def main(self, regex_string):
-        pass
+        """File 等构造函数已足够精确，不需要额外筛选"""
+        if not isinstance(regex_string, str):
+            regex_string = str(regex_string)
+        # 排除明显的安全写法
+        if re.search(r'normalize\(\)|getCanonicalPath', regex_string):
+            return False
+        return None
+
