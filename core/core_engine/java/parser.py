@@ -6,7 +6,7 @@ import javalang
 from utils.log import logger
 from core.pretreatment import ast_object as _ast_object_singleton
 from core.core_engine.trace_cache import TraceCache
-from core.core_engine.builtin_knowledge import BuiltinKnowledge
+from core.core_engine.java.builtin_knowledge import lookup as lookup_builtin
 
 scan_results = []
 is_repair_functions = []
@@ -433,7 +433,7 @@ def _is_passthrough_method(method_node, param_name, repair_functions, class_meth
     # 查内置知识库：已知方法直接返回透传结果
     method_name = getattr(method_node, 'name', None)
     if method_name:
-        knowledge = BuiltinKnowledge.lookup("java", method_name)
+        knowledge = lookup_builtin(method_name)
         if knowledge:
             if knowledge["safe"] and not knowledge["passthrough"]:
                 return False  # 安全过滤函数，不透传

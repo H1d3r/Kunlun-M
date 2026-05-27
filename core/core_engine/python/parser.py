@@ -19,7 +19,7 @@ import traceback
 from utils.log import logger
 from core.pretreatment import ast_object as _ast_object_singleton
 from core.core_engine.trace_cache import TraceCache
-from core.core_engine.builtin_knowledge import BuiltinKnowledge
+from core.core_engine.python.builtin_knowledge import lookup as lookup_builtin
 
 # 全局状态（与 PHP/Java parser 保持一致的模式）
 scan_results = []
@@ -973,7 +973,7 @@ def _trace_function_return(func_def, call_node, lineno, file_path,
                 call_func_name = val.attr + '.' + call_func_name
 
     if call_func_name:
-        knowledge = BuiltinKnowledge.lookup("python", call_func_name)
+        knowledge = lookup_builtin(call_func_name)
         if knowledge:
             if knowledge["safe"] and not knowledge["passthrough"]:
                 return -1, None

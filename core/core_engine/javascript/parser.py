@@ -17,7 +17,7 @@ from core.pretreatment import ast_object
 
 from core.internal_defines.javascript.functions import function_dict, string_function
 from core.core_engine.trace_cache import TraceCache
-from core.core_engine.builtin_knowledge import BuiltinKnowledge
+from core.core_engine.javascript.builtin_knowledge import lookup as lookup_builtin
 
 default_controlled_params = [
     'location.hash',
@@ -454,7 +454,7 @@ def function_back(function_node, function_params, back_nodes=None, file_path=Non
     logger.debug("[AST] Sounds like found a new function define {}".format(function_name))
 
     # 查内置知识库
-    knowledge = BuiltinKnowledge.lookup("javascript", function_name)
+    knowledge = lookup_builtin(function_name)
     if knowledge:
         if knowledge["safe"] and not knowledge["passthrough"]:
             return -1, "Function()", 0
@@ -878,7 +878,7 @@ def function_call_back(param, nodes, function_params, file_path=None, isback=Fal
         # 处理当参数传递到function call时，需要回溯寻找函数定义
 
         # 先查内置知识库，用 callee_name 匹配
-        knowledge = BuiltinKnowledge.lookup("javascript", callee_name)
+        knowledge = lookup_builtin(callee_name)
         if knowledge:
             if knowledge["safe"] and not knowledge["passthrough"]:
                 logger.debug("[AST] callee {} in builtin knowledge, safe=True, skip".format(callee_name))

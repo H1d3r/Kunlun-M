@@ -23,7 +23,8 @@
     cache.clear()
 """
 
-from core.core_engine.builtin_knowledge import BuiltinKnowledge
+import importlib
+from typing import Dict, List, Optional, Union
 
 
 class TraceCache:
@@ -35,7 +36,18 @@ class TraceCache:
         """
         self.language = language
         self._runtime_cache = {}  # key: (file_path, var_name, lineno) → value: (code, cp, expr_lineno)
-        self._builtin = BuiltinKnowledge
+        self._builtin_module = None  # 延迟加载的语言知识库模块
+
+    def _load_builtin_module(self):
+        """延迟加载语言知识库模块"""
+        if self._builtin_module is None:
+            try:
+                module_path = f"core.core_engine.{self.language}.builtin_knowledge"
+                self._builtin_module = importlib.import_module(module_path)
+            except ImportError:
+                # 知识库模块不存在，使用空模块
+                self._builtin_module = False
+        return self._builtin_module
 
     def _make_key(self, file_path, var_name, lineno):
         """生成缓存 key"""
@@ -66,7 +78,10 @@ class TraceCache:
         :param func_name: 函数/方法名（支持 "module.func" 和 "func" 两种格式）
         :return: {"passthrough": [...], "safe": bool} 或 None
         """
-        return self._builtin.lookup(self.language, func_name)
+        module = self._load_builtin_module()
+        if module and hasattr(module, 'lookup'):
+            return module.lookup(func_name)
+        return None
 
     def clear(self):
         """清空运行时缓存（内置知识库不受影响）"""
@@ -79,8 +94,10 @@ class TraceCache:
 
     def stats(self):
         """缓存统计信息"""
+        module = self._load_builtin_module()
+        builtin_count = len(getattr(module, 'KNOWLEDGE', {})) if module else 0
         return {
             "language": self.language,
             "runtime_entries": len(self._runtime_cache),
-            "builtin_entries": len(getattr(self._builtin, self.language.upper(), {})),
+            "builtin_entries": builtin_count,
         }
