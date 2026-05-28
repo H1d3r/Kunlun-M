@@ -173,6 +173,7 @@ def scan(target_directory, a_sid=None, s_sid=None, special_rules=None, language=
         logger.critical('no rules!')
         return False
     logger.info('[PUSH] {rc} Rules'.format(rc=len(rules)))
+    print('[CI] DEBUG: Loaded rules: {}'.format(','.join(sorted(rules.keys()))))
     push_rules = []
     scan_list = []
 

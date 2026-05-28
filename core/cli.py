@@ -289,6 +289,7 @@ def start(target, formatter, output, special_rules, a_sid=None, language=None, t
             main_framework = pa.language
 
         logger.info('[CLI] [STATISTIC] Language: {l} Framework: {f}'.format(l=",".join(main_language), f=main_framework))
+        print('[CI] DEBUG: Detected languages: {}'.format(','.join(main_language)))
         logger.info('[CLI] [STATISTIC] Files: {fc}, Extensions:{ec}, Consume: {tc}'.format(fc=file_count,
                                                                                            ec=len(files),
                                                                                            tc=time_consume))
