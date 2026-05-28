@@ -352,6 +352,13 @@ def main(argv):
         with open(out, 'w', encoding='utf-8') as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
 
+        # 输出所有检出漏洞的详细信息（调试用）
+        print('[CI] DEBUG: 检出漏洞列表:')
+        for v in vul_list:
+            print('  - file={} cvi={} lang={} unconfirm={} type={}'.format(
+                v.get('file', '?'), v.get('cvi_id', '?'), v.get('language', '?'),
+                v.get('is_unconfirm', '?'), v.get('result_type', '?')))
+
         # 输出对比结果摘要
         if expected_data and isinstance(expected_data.get('expected'), list):
             print('[CI] 对比模式：共检出 {} 个漏洞，预期 {} 个'.format(len(vul_list), len(expected_data['expected'])))
