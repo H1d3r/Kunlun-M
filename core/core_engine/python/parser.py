@@ -20,6 +20,7 @@ from utils.log import logger
 from core.pretreatment import ast_object as _ast_object_singleton
 from core.core_engine.trace_cache import TraceCache
 from core.core_engine.python.builtin_knowledge import lookup as lookup_builtin
+from core.core_engine.python.summary_generator import lookup_summary
 
 # 全局状态（与 PHP/Java parser 保持一致的模式）
 scan_results = []
@@ -27,6 +28,10 @@ is_repair_functions = []
 is_controlled_params = []
 scan_chain = []
 # 行号通过函数返回值三元组 (code, source, source_lineno) 传递
+
+# 函数摘要系统状态
+_summaries_initialized = False
+_file_summaries = {}
 
 # 内置敏感函数列表（用于跨文件间接 sink 检测）
 BUILTIN_SENSITIVE_SINKS = [
@@ -941,6 +946,53 @@ def _find_function_def(tree, func_name):
     return None
 
 
+def _judge_from_summary_py(summary, call_node, controlled_params):
+    """根据函数摘要判定返回值可控性（Python版）
+
+    返回: (code, source, lineno) 三元组或 None（摘要无法判定，走原路径）
+    """
+    if controlled_params is None:
+        return None
+
+    call_args = call_node.args or []
+
+    for rf in summary.return_flow:
+        if rf.origin_type == "param":
+            for param_idx in rf.dep_params:
+                if param_idx < len(call_args):
+                    arg_str = _expr_to_str(call_args[param_idx])
+                    if is_controllable(arg_str, controlled_params):
+                        return (1, arg_str, getattr(call_node, 'lineno', 0))
+                    names = _collect_names(call_args[param_idx])
+                    if names:
+                        return ('deps', list(names), getattr(call_node, 'lineno', 0))
+
+        elif rf.origin_type == "call":
+            if is_controllable(rf.origin, controlled_params):
+                return (1, rf.origin, getattr(call_node, 'lineno', 0))
+            knowledge = lookup_builtin(rf.origin)
+            if knowledge and knowledge.get("passthrough"):
+                for param_idx in rf.dep_params:
+                    if param_idx < len(call_args):
+                        arg_str = _expr_to_str(call_args[param_idx])
+                        if is_controllable(arg_str, controlled_params):
+                            return (1, arg_str, getattr(call_node, 'lineno', 0))
+            for param_idx in rf.dep_params:
+                if param_idx < len(call_args):
+                    names = _collect_names(call_args[param_idx])
+                    if names:
+                        return ('deps', list(names), getattr(call_node, 'lineno', 0))
+
+        elif rf.origin_type == "global":
+            if is_controllable(rf.origin, controlled_params):
+                return (1, rf.origin, getattr(call_node, 'lineno', 0))
+
+        elif rf.origin_type == "literal":
+            continue
+
+    return None
+
+
 def _trace_function_return(func_def, call_node, lineno, file_path,
                             repair_functions, controlled_params,
                             visited_funcs, depth, tree):
@@ -986,6 +1038,13 @@ def _trace_function_return(func_def, call_node, lineno, file_path,
                 if deps:
                     return ('deps', list(deps), getattr(call_node, 'lineno', lineno))
             return -1, None, 0  # 不透传 → 安全
+
+    # 1.5. 查函数摘要
+    callee_summary = lookup_summary(func_name)
+    if callee_summary and callee_summary.return_flow:
+        result = _judge_from_summary_py(callee_summary, call_node, controlled_params)
+        if result:
+            return result
 
     # 建立参数映射：调用实参 → 函数形参
     arg_map = {}
@@ -1205,6 +1264,65 @@ def _func_has_sink(func_def, sensitive_func):
     return False
 
 
+def _init_function_summaries(file_path):
+    """初始化 Python 文件的函数摘要"""
+    global _summaries_initialized, _file_summaries
+
+    if _summaries_initialized:
+        return
+
+    try:
+        from core.core_engine.function_summary import SummaryCacheManager
+        from core.core_engine.python.summary_generator import generate_file_summaries, generate_summaries_for_target
+
+        target_dir = file_path
+        pt = _ast_object_singleton
+        if pt and hasattr(pt, 'target_directory'):
+            target_dir = pt.target_directory
+        elif pt and hasattr(pt, 'pre_result'):
+            paths = list(pt.pre_result.keys())
+            if len(paths) > 1:
+                import os
+                target_dir = os.path.commonpath(paths)
+            elif paths:
+                import os
+                target_dir = os.path.dirname(paths[0])
+
+        cache_mgr = SummaryCacheManager()
+
+        files_dict = {}
+        if pt and hasattr(pt, 'pre_result'):
+            for fp, data in pt.pre_result.items():
+                if data.get('language') == 'python':
+                    try:
+                        with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
+                            files_dict[fp] = f.read()
+                    except:
+                        pass
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                files_dict[file_path] = f.read()
+        except:
+            pass
+
+        if files_dict:
+            cached = cache_mgr.load_or_generate(target_dir, files_dict)
+            need_generate = {fp: content for fp, content in files_dict.items()
+                             if not cached.get(fp) or not cached[fp].functions}
+            if need_generate:
+                new_summaries = generate_summaries_for_target(target_dir, need_generate)
+                for fp, fs in new_summaries.items():
+                    cached[fp] = fs
+                    cache_mgr.save_file_summary(target_dir, fp, fs)
+            _file_summaries = cached
+            logger.debug(f"[AST][Python] 摘要初始化完成: {len(_file_summaries)} 个文件")
+
+        _summaries_initialized = True
+    except Exception as e:
+        logger.debug(f"[AST][Python] 摘要初始化失败: {e}")
+        _summaries_initialized = True
+
+
 def scan_parser(sensitive_func, vul_lineno, file_path, repair_functions=[], controlled_params=[], svid=None):
     """
     Python AST scan parser - 分析敏感函数参数是否可控
@@ -1218,10 +1336,13 @@ def scan_parser(sensitive_func, vul_lineno, file_path, repair_functions=[], cont
     :return: scan_results 列表，每个元素是 {"code": N, "chain": [...], "source": ...}
     """
     global scan_results, is_repair_functions, is_controlled_params, scan_chain, _trace_visited
+    global _summaries_initialized
 
     # 清空追踪去重集合和缓存
     _trace_visited = set()
     _trace_cache.clear()
+    _summaries_initialized = False
+    _init_function_summaries(file_path)
 
     try:
         scan_chain = ["start"]
