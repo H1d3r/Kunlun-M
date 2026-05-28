@@ -1001,6 +1001,7 @@ def function_back_go(func_name, call_args, vul_lineno, file_path,
 
         # 2. 查函数定义索引（预建）
         result = _func_def_index.get((file_path, func_name))
+        callee_fp = file_path  # 默认 callee 在当前文件
 
         # 3. 索引未命中，回退到实时搜索
         if result is None:
@@ -1038,6 +1039,7 @@ def function_back_go(func_name, call_args, vul_lineno, file_path,
                     if result is not None:
                         logger.debug("[AST][Go] Found function {} via import_map: {}".format(
                             func_name, other_fp))
+                        callee_fp = other_fp
                         break
                     # 回退到实时搜索
                     other_lines = pt.pre_result.get(other_fp, {}).get('source_lines', [])
@@ -1047,6 +1049,7 @@ def function_back_go(func_name, call_args, vul_lineno, file_path,
                     if result is not None:
                         logger.debug("[AST][Go] Found function {} via import_map (realtime): {}".format(
                             func_name, other_fp))
+                        callee_fp = other_fp
                         break
 
                 # fallback: 如果 import_map 没找到，保留原有暴力搜索
@@ -1061,6 +1064,7 @@ def function_back_go(func_name, call_args, vul_lineno, file_path,
                         if result is not None:
                             logger.debug("[AST][Go] Found function {} in cross-file index: {}".format(
                                 func_name, other_fp))
+                            callee_fp = other_fp
                             break
                         # 回退到实时搜索
                         other_lines = other_data.get('source_lines', [])
@@ -1070,13 +1074,24 @@ def function_back_go(func_name, call_args, vul_lineno, file_path,
                         if result is not None:
                             logger.debug("[AST][Go] Found function {} in cross-file: {}".format(
                                 func_name, other_fp))
+                            callee_fp = other_fp
                             break
         if result is None:
             return (-1, [])
 
         formal_params, body_lines, def_lineno = result
 
-        # 4. 分析返回值依赖
+        # 4.5 先尝试进入 callee 函数体检查 sink 调用
+        #     类似 Python 引擎的 _try_cross_file_trace
+        sink_result = _trace_callee_body_for_sinks(
+            callee_fp, func_name, formal_params, call_args,
+            file_path,  # caller file
+            repair_functions, controlled_params
+        )
+        if sink_result is not None:
+            return sink_result
+
+        # 5. fallback: 分析返回值依赖
         return _analyze_return_deps_go(
             formal_params, body_lines, call_args,
             file_path, repair_functions, controlled_params
@@ -1090,6 +1105,126 @@ def function_back_go(func_name, call_args, vul_lineno, file_path,
                 _scan_function_stack.remove(func_name)
             except ValueError:
                 pass
+
+
+def _trace_callee_body_for_sinks(callee_file_path, callee_func_name, formal_params,
+                                  call_args_str, caller_file_path,
+                                  repair_functions=None, controlled_params=None):
+    """
+    进入 callee 函数体，用 AST 搜索 sink 调用，追踪参数数据流。
+
+    当 function_back_go 找到 callee 函数定义后，先检查函数体中是否有已知 sink。
+    如果有，追踪 sink 参数的可控性（通过 形参→实参 映射回到 caller）。
+
+    类似 Python 引擎的 _try_cross_file_trace。
+
+    返回: (code, caller_var_names) 或 None（未找到 sink）
+    """
+    if repair_functions is None:
+        repair_functions = is_repair_functions
+    if controlled_params is None:
+        controlled_params = is_controlled_params
+
+    # 1. 解析 callee 文件的 AST
+    tree = _parse_go_ast(callee_file_path)
+    if not tree:
+        return None
+
+    # 2. 在 AST 中找到 callee 函数定义
+    #    callee_func_name 可能是 "pkg.Func" 格式，AST 中只存 "Func"
+    lookup_name = callee_func_name.split('.')[-1] if '.' in callee_func_name else callee_func_name
+    func_node = None
+    for child in tree.root_node.children:
+        if child.type in ('function_declaration', 'method_declaration'):
+            name = None
+            for cc in child.children:
+                if cc.type in ('identifier', 'field_identifier'):
+                    name = cc.text.decode('utf-8', errors='ignore')
+                    break
+            if name == lookup_name:
+                func_node = child
+                break
+
+    if not func_node:
+        return None
+
+    # 3. 获取函数体 block
+    body_block = None
+    for child in func_node.children:
+        if child.type == 'block':
+            body_block = child
+            break
+
+    if not body_block:
+        return None
+
+    # 4. Walk 函数体，找所有 call_expression 中的已知 sink
+    sink_calls = []
+
+    def _walk_for_sinks(node):
+        if node.type == 'call_expression':
+            func_text = _get_call_func_text(node)
+            if func_text:
+                knowledge = lookup_builtin(func_text)
+                # 已知 sink：在知识库中且 safe=False
+                if knowledge and not knowledge.get('safe', True):
+                    sink_calls.append((func_text, node))
+        for child in node.children:
+            _walk_for_sinks(child)
+
+    _walk_for_sinks(body_block)
+
+    if not sink_calls:
+        return None
+
+    # 5. 建立形参→实参映射
+    actual_args = _split_args_respecting_parens(call_args_str) if call_args_str else []
+    arg_map = {}  # formal_name → actual_expr
+    for idx, fp_name in enumerate(formal_params):
+        if idx < len(actual_args):
+            arg_map[fp_name] = actual_args[idx].strip()
+
+    # 6. 对每个 sink 调用，检查参数是否引用了 callee 的形参
+    for sink_func, sink_node in sink_calls:
+        args = _get_call_args_from_ast(sink_node)
+        for arg_node in args:
+            # 检查参数是否直接是字面量（不可控）
+            if arg_node.type in _LITERAL_NODE_TYPES:
+                continue
+
+            # 提取参数中的标识符
+            arg_identifiers = _collect_identifiers_from_ast(arg_node)
+            for ident in arg_identifiers:
+                if ident not in arg_map:
+                    continue
+
+                # 这个 sink 参数引用了 callee 的形参
+                actual_expr = arg_map[ident]
+
+                # 6a. 检查实参是否直接可控
+                if _is_controllable_source(actual_expr, controlled_params):
+                    logger.debug(
+                        "[AST][Go] Sink {} in callee body uses controllable param: {} -> {}".format(
+                            sink_func, ident, actual_expr))
+                    return (1, [])
+
+                # 6b. 提取实参中的变量名，在 caller 中追踪
+                caller_var_names = set()
+                names = _extract_var_names_from_expr(actual_expr)
+                if names:
+                    caller_var_names.update(names)
+                else:
+                    simple = re.match(r'^([a-zA-Z_]\w*)$', actual_expr)
+                    if simple:
+                        caller_var_names.add(simple.group(1))
+
+                if caller_var_names:
+                    logger.debug(
+                        "[AST][Go] Sink {} in callee body depends on caller vars: {}".format(
+                            sink_func, caller_var_names))
+                    return ('deps', list(caller_var_names))
+
+    return None
 
 
 def _propagate_assignments_ast(tree, func_lines, controllable_local):
