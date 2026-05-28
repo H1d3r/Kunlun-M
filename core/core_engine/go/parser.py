@@ -1850,6 +1850,43 @@ def _trace_param_at_call_sites_ast(func_name, param_name, file_path, tree,
         _find_func_def(tree.root_node)
 
         if not func_def_node:
+            # 当前文件找不到，用 _func_def_index 跨文件搜索
+            formal_params_from_index = None
+            for (idx_fp, idx_name), idx_val in _func_def_index.items():
+                if idx_name == func_name:
+                    formal_params_from_index = idx_val[0]  # (formal_params, body_lines, def_lineno)
+                    break
+            if formal_params_from_index is None:
+                continue
+
+            # 直接用索引中的形参列表，跳过 AST 搜索形参的步骤
+            # 找到 param_name 在形参中的位置
+            param_idx = -1
+            for i, fp in enumerate(formal_params_from_index):
+                if fp == param_name:
+                    param_idx = i
+                    break
+
+            if param_idx < 0 or param_idx >= len(args):
+                continue
+
+            # 获取对应的实参并追踪
+            actual_arg = args[param_idx]
+            actual_arg_text = _get_node_text(actual_arg)
+
+            if actual_arg.type == 'identifier':
+                result = _trace_variable_in_lines(
+                    file_path, actual_arg_text, call_lineno, call_lineno,
+                    repair_functions, controlled_params, depth + 1, max_depth
+                )
+            else:
+                result = trace_go_expr(
+                    param_name, actual_arg, file_path, call_lineno, call_lineno,
+                    repair_functions, controlled_params, depth + 1, max_depth,
+                    function_back_go, _trace_variable_in_lines
+                )
+            if result in (1, 2):
+                return result
             continue
 
         # 获取形参列表
