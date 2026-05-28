@@ -37,6 +37,15 @@ _LITERAL_IDENTS = frozenset({"nil", "true", "false"})
 
 _MAX_TRACE_DEPTH = 10
 
+# 模块级摘要注册表，用于跨函数递归分析
+_summary_registry: Dict[str, FunctionSummary] = {}
+
+
+def lookup_summary(func_name: str) -> Optional[FunctionSummary]:
+    """查询已生成的函数摘要（短名匹配）。"""
+    short_name = func_name.split(".")[-1] if "." in func_name else func_name
+    return _summary_registry.get(short_name)
+
 
 def _node_text(node) -> str:
     """获取 tree-sitter 节点的文本内容。"""
@@ -220,15 +229,47 @@ def _trace_dataflow(
                 visited, depth + 1,
             )
             dep_params.extend(sub.get("dep_params", []))
-        # 追踪参数列表
+        # 收集参数节点的数据流信息（用于递归展开时做参数映射）
+        arg_flows: List[dict] = []
         for arg in children[1:]:
             if arg.type == "argument_list":
                 for a in arg.children:
+                    if a.type == ",":
+                        continue
                     sub = _trace_dataflow(
                         a, param_names, file_lines, func_body, assignments,
                         visited, depth + 1,
                     )
                     dep_params.extend(sub.get("dep_params", []))
+                    arg_flows.append(sub)
+
+        # 递归查摘要注册表，展开自定义方法调用
+        short_name = func_name.split(".")[-1] if "." in func_name else func_name
+        callee_summary = _summary_registry.get(short_name)
+
+        if callee_summary and callee_summary.return_flow and depth < _MAX_TRACE_DEPTH:
+            # 用被调用函数的 return_flow 展开，映射参数依赖
+            expanded_deps: List[int] = []
+            for rf in callee_summary.return_flow:
+                for callee_param_idx in rf.dep_params:
+                    if callee_param_idx < len(arg_flows):
+                        # 被调用函数的第 callee_param_idx 个参数 → 对应当前调用处的第 callee_param_idx 个参数
+                        expanded_deps.extend(arg_flows[callee_param_idx].get("dep_params", []))
+
+            if expanded_deps:
+                # 有参数映射，合并并返回展开后的结果
+                all_deps = list(dict.fromkeys(dep_params + expanded_deps))
+                return {
+                    "origin": func_name,
+                    "origin_type": "call",
+                    "dep_params": all_deps,
+                    "path": [{
+                        "node": func_name,
+                        "type": "call",
+                        "line": expr_node.start_point.row + 1,
+                    }],
+                    "expanded_from": short_name,
+                }
 
         return {
             "origin": func_name,
@@ -496,14 +537,52 @@ def generate_summaries_for_target(
 ) -> Dict[str, FileSummary]:
     """便捷入口：遍历所有 Go 文件，生成摘要。
 
+    两遍处理：
+    1. 第一遍：生成所有文件的摘要，注册到全局注册表
+    2. 第二遍：对有自定义方法调用的函数做二次分析（可递归展开）
+
     :param target_path: 扫描目标路径（仅用于日志）
     :param files_dict: {file_path: file_content} 字典
     :return: {file_path: FileSummary} 字典
     """
+    global _summary_registry
+    _summary_registry = {}  # 重置注册表
+
     summaries: Dict[str, FileSummary] = {}
+
+    # 第一遍：生成所有摘要并注册
     for file_path, content in files_dict.items():
         if not file_path.endswith(".go"):
             continue
         logger.debug(f"生成函数摘要: {file_path}")
-        summaries[file_path] = generate_file_summaries(file_path, content)
+        fs = generate_file_summaries(file_path, content)
+        summaries[file_path] = fs
+        # 注册到全局注册表
+        for fn in fs.functions:
+            _summary_registry[fn.name] = fn
+
+    # 第二遍：对有自定义方法调用的函数做二次分析
+    for file_path, content in files_dict.items():
+        if not file_path.endswith(".go"):
+            continue
+        old_fs = summaries[file_path]
+        new_fs = generate_file_summaries(file_path, content)
+        # 更新有变化的函数
+        changed = False
+        for i, fn in enumerate(new_fs.functions):
+            if fn.return_flow:
+                old_fn = old_fs.functions[i]
+                if len(fn.return_flow) != len(old_fn.return_flow):
+                    old_fs.functions[i] = fn
+                    changed = True
+                else:
+                    for j, rf in enumerate(fn.return_flow):
+                        if rf.dep_params != old_fn.return_flow[j].dep_params:
+                            old_fs.functions[i] = fn
+                            changed = True
+                            break
+        if changed:
+            summaries[file_path] = old_fs
+
+    logger.debug(f"函数摘要生成完成: {len(summaries)} 个文件, {len(_summary_registry)} 个函数")
     return summaries
