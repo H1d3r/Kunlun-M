@@ -1,10 +1,10 @@
 {
   "meta": {
     "target": "/home/ubuntu/.hermes/hermes-agent/Kunlun-M/ci_target",
-    "task_id": 175,
-    "project_id": 122,
-    "started_at": "2026-05-29T10:11:15.741779+00:00",
-    "finished_at": "2026-05-29T10:11:16.825948+00:00",
+    "task_id": 183,
+    "project_id": 130,
+    "started_at": "2026-05-29T10:22:07.365154+00:00",
+    "finished_at": "2026-05-29T10:22:08.537428+00:00",
     "fail_on": "none",
     "include_unconfirm": false,
     "with_vendor": false,
@@ -12,15 +12,15 @@
     "mode": "expected_comparison"
   },
   "summary": {
-    "total": 10,
+    "total": 16,
     "by_severity": {
       "critical": 0,
-      "high": 9,
-      "medium": 1,
+      "high": 13,
+      "medium": 3,
       "low": 0
     },
     "max_severity": "high",
-    "expected_count": 7,
+    "expected_count": 13,
     "missing_count": 0,
     "unexpected_count": 2
   },
@@ -59,12 +59,42 @@
       "file": "cmd_inject.c",
       "cvi_id": "9001",
       "severity": "high"
+    },
+    {
+      "file": "format_string.c",
+      "cvi_id": "9002",
+      "severity": "high"
+    },
+    {
+      "file": "buffer_overflow.c",
+      "cvi_id": "9003",
+      "severity": "high"
+    },
+    {
+      "file": "path_traversal.c",
+      "cvi_id": "9004",
+      "severity": "high"
+    },
+    {
+      "file": "integer_overflow.c",
+      "cvi_id": "9005",
+      "severity": "high"
+    },
+    {
+      "file": "env_inject.c",
+      "cvi_id": "9006",
+      "severity": "high"
+    },
+    {
+      "file": "arbitrary_read.c",
+      "cvi_id": "9007",
+      "severity": "high"
     }
   ],
   "missing": [],
   "unexpected": [
     {
-      "id": 441,
+      "id": 574,
       "cvi_id": "6023",
       "rule_name": "ProcessBuilder Command Injection",
       "severity": "high",
@@ -75,7 +105,7 @@
       "source_code": "name:<7>, point:<new ProcessBuilder(cmd>"
     },
     {
-      "id": 442,
+      "id": 575,
       "cvi_id": "6038",
       "rule_name": "ProcessBuilder Command Injection (function-param-controllable)",
       "severity": "high",
@@ -88,7 +118,7 @@
   ],
   "vulnerabilities": [
     {
-      "id": 437,
+      "id": 570,
       "cvi_id": "1005",
       "rule_name": "SQLI",
       "severity": "high",
@@ -99,7 +129,7 @@
       "source_code": "mysql_query(\"SELECT * FROM users WHERE id=\" . $id)"
     },
     {
-      "id": 438,
+      "id": 571,
       "cvi_id": "3002",
       "rule_name": "XSS",
       "severity": "medium",
@@ -110,7 +140,7 @@
       "source_code": "document.write"
     },
     {
-      "id": 439,
+      "id": 572,
       "cvi_id": "3100",
       "rule_name": "命令注入",
       "severity": "high",
@@ -121,7 +151,7 @@
       "source_code": "exec("
     },
     {
-      "id": 440,
+      "id": 573,
       "cvi_id": "6003",
       "rule_name": "Command Injection",
       "severity": "high",
@@ -132,7 +162,7 @@
       "source_code": "ProcessBuilder"
     },
     {
-      "id": 441,
+      "id": 574,
       "cvi_id": "6023",
       "rule_name": "ProcessBuilder Command Injection",
       "severity": "high",
@@ -143,7 +173,7 @@
       "source_code": "name:<7>, point:<new ProcessBuilder(cmd>"
     },
     {
-      "id": 442,
+      "id": 575,
       "cvi_id": "6038",
       "rule_name": "ProcessBuilder Command Injection (function-param-controllable)",
       "severity": "high",
@@ -154,7 +184,7 @@
       "source_code": "new ProcessBuilder("
     },
     {
-      "id": 443,
+      "id": 576,
       "cvi_id": "7000",
       "rule_name": "命令注入",
       "severity": "high",
@@ -165,7 +195,7 @@
       "source_code": "os.system(cmd)"
     },
     {
-      "id": 444,
+      "id": 577,
       "cvi_id": "7000",
       "rule_name": "命令注入",
       "severity": "high",
@@ -176,7 +206,7 @@
       "source_code": "subprocess.call(cmd, shell=True)"
     },
     {
-      "id": 445,
+      "id": 578,
       "cvi_id": "8001",
       "rule_name": "命令注入",
       "severity": "high",
@@ -187,7 +217,7 @@
       "source_code": "exec.Command"
     },
     {
-      "id": 446,
+      "id": 579,
       "cvi_id": "9001",
       "rule_name": "命令注入",
       "severity": "high",
@@ -196,6 +226,72 @@
       "is_unconfirm": false,
       "result_type": "Function-param-controllable",
       "source_code": "system("
+    },
+    {
+      "id": 580,
+      "cvi_id": "9002",
+      "rule_name": "格式化字符串漏洞",
+      "severity": "high",
+      "language": "c",
+      "file": "format_string.c:6",
+      "is_unconfirm": false,
+      "result_type": "Function-param-controllable",
+      "source_code": "printf("
+    },
+    {
+      "id": 581,
+      "cvi_id": "9003",
+      "rule_name": "缓冲区溢出",
+      "severity": "high",
+      "language": "c",
+      "file": "buffer_overflow.c:8",
+      "is_unconfirm": false,
+      "result_type": "Function-param-controllable",
+      "source_code": "strcpy("
+    },
+    {
+      "id": 582,
+      "cvi_id": "9004",
+      "rule_name": "路径穿越",
+      "severity": "high",
+      "language": "c",
+      "file": "path_traversal.c:10",
+      "is_unconfirm": false,
+      "result_type": "Function-param-controllable",
+      "source_code": "fopen("
+    },
+    {
+      "id": 583,
+      "cvi_id": "9005",
+      "rule_name": "整数溢出",
+      "severity": "medium",
+      "language": "c",
+      "file": "integer_overflow.c:8",
+      "is_unconfirm": false,
+      "result_type": "Function-param-controllable",
+      "source_code": "malloc("
+    },
+    {
+      "id": 584,
+      "cvi_id": "9006",
+      "rule_name": "环境变量注入",
+      "severity": "medium",
+      "language": "c",
+      "file": "env_inject.c:6",
+      "is_unconfirm": false,
+      "result_type": "Function-param-controllable",
+      "source_code": "putenv("
+    },
+    {
+      "id": 585,
+      "cvi_id": "9007",
+      "rule_name": "任意文件读取",
+      "severity": "high",
+      "language": "c",
+      "file": "arbitrary_read.c:11",
+      "is_unconfirm": false,
+      "result_type": "Function-param-controllable",
+      "source_code": "open("
     }
   ],
   "exit": {

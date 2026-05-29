@@ -646,7 +646,28 @@ class VulnerabilityMatcher(object):
                 logger.debug("[CVI-{cvi}] [ONLY-MATCH]".format(cvi=self.cvi))
                 return True, 'Regex-only-match'
 
-            elif self.rule_match_mode == const.mm_function_param_controllable:
+            elif self.rule_match_mode in (const.mm_function_param_controllable,
+                                           const.mm_c_function_param_controllable):
+                # 调用规则的 main() 做二次筛选
+                main_input = self.code_content
+                try:
+                    with open(self.file_path, 'r', encoding='utf-8', errors='replace') as f:
+                        source_lines = f.readlines()
+                    idx = int(self.line_number) - 1
+                    if 0 <= idx < len(source_lines):
+                        main_input = source_lines[idx].strip()
+                except Exception:
+                    pass
+
+                if hasattr(self.single_rule, 'main') and callable(self.single_rule.main):
+                    try:
+                        main_result = self.single_rule.main(main_input)
+                        if main_result is False:
+                            logger.debug('[CVI-{cvi}] C main() returned False, skip'.format(cvi=self.cvi))
+                            return False, 'Filtered by rule.main()'
+                    except Exception:
+                        pass
+
                 # 优先使用 vul_function
                 if (hasattr(self, 'vul_function') and
                     isinstance(self.vul_function, list) and
@@ -654,7 +675,7 @@ class VulnerabilityMatcher(object):
                     rule_match = self.vul_function
                 else:
                     rule_match = self.rule_match.strip('()').split('|')
-                    rule_match = [r.replace('\\\\.', '.').replace('\\\\(', '(').replace('\\\\)', ')').rstrip('(') for r in rule_match]
+                    rule_match = [r.replace('\\.', '.').replace('\\(', '(').replace('\\)', ')').rstrip('(') for r in rule_match]
                 logger.debug('[RULE_MATCH] {r}'.format(r=rule_match))
                 try:
                     result = c_scan_parser(rule_match, self.line_number, self.file_path,
@@ -668,35 +689,6 @@ class VulnerabilityMatcher(object):
                     else:
                         logger.debug(
                             '[AST] Parser failed / vulnerability parameter is not controllable {r}'.format(
-                                r=result))
-                        return False, "Can't parser"
-                except Exception:
-                    exc_msg = traceback.format_exc()
-                    logger.warning(exc_msg)
-                    raise
-
-            elif self.rule_match_mode in (const.mm_c_function_param_controllable,):
-                # C/C++ 专用 AST 模式
-                if (hasattr(self, 'vul_function') and
-                    isinstance(self.vul_function, list) and
-                    len(self.vul_function) > 0):
-                    rule_match = self.vul_function
-                else:
-                    rule_match = self.rule_match.strip('()').split('|')
-                    rule_match = [r.replace('\\\\.', '.').replace('\\\\(', '(').replace('\\\\)', ')').rstrip('(') for r in rule_match]
-                logger.debug('[RULE_MATCH][C-AST] {r}'.format(r=rule_match))
-                try:
-                    result = c_scan_parser(rule_match, self.line_number, self.file_path,
-                                           repair_functions=self.repair_functions,
-                                           controlled_params=self.controlled_list, svid=self.cvi)
-                    logger.debug('[AST][C] [RET] {c}'.format(c=result))
-                    if len(result) > 0:
-                        parsed = self._parse_ast_result(result)
-                        if parsed is not None:
-                            return parsed
-                    else:
-                        logger.debug(
-                            '[AST][C] Parser failed / vulnerability parameter is not controllable {r}'.format(
                                 r=result))
                         return False, "Can't parser"
                 except Exception:

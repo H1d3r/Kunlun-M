@@ -1984,11 +1984,9 @@ def scan_parser(rule_match, vul_lineno, file_path,
 
     # AST 提取成功 → 用 AST 节点分析参数
     if ast_args:
-        # 检查内置知识库
-        knowledge = lookup_builtin(matched_func)
-        if knowledge and knowledge.get("safe"):
-            results.append({"code": -1, "chain": []})
-            return results
+        # 注意：不在入口处检查 builtin_knowledge.safe 跳过追踪。
+        # safe 标志仅用于嵌套调用的可控性判断（如修复函数），不应阻止
+        # 对 sink 函数自身参数的可控性分析。
 
         for arg_idx, arg_node in enumerate(ast_args):
             arg_text = _node_text(arg_node)
