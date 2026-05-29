@@ -1750,8 +1750,11 @@ def analysis_callexpression(node, vul_function, back_node, vul_lineno, file_path
         if is_eval_function(node):
             analysis_params(node, back_node, vul_function, vul_lineno, file_path, function_params, is_eval=True)
 
-        elif call_callee.type == "FunctionExpression":
-            child_nodes = call_callee.body.body
+        elif call_callee.type in ("FunctionExpression", "ArrowFunctionExpression"):
+            if call_callee.body.type == "BlockStatement":
+                child_nodes = call_callee.body.body
+            else:
+                child_nodes = [call_callee.body]
             function_params = call_callee.arguments
 
             analysis(child_nodes, vul_function, back_node, int(vul_lineno), file_path, function_params=function_params,
@@ -1761,8 +1764,11 @@ def analysis_callexpression(node, vul_function, back_node, vul_lineno, file_path
             analysis_params(node, back_node, vul_function, vul_lineno, file_path, function_params)
 
     elif node.loc.start.line < vul_lineno <= node.loc.end.line:
-        if node.callee.type == "FunctionExpression":
-            nodes = node.callee.body.body
+        if node.callee.type in ("FunctionExpression", "ArrowFunctionExpression"):
+            if node.callee.body.type == "BlockStatement":
+                nodes = node.callee.body.body
+            else:
+                nodes = [node.callee.body]
             function_params = node.callee.params
 
             analysis(nodes, vul_function, back_node, int(vul_lineno), file_path, function_params=function_params,
@@ -1770,8 +1776,11 @@ def analysis_callexpression(node, vul_function, back_node, vul_lineno, file_path
         else:
             # 遍历 arguments，递归进入 FunctionExpression 类型的回调参数
             for arg in node.arguments:
-                if arg.type == "FunctionExpression":
-                    nodes = arg.body.body
+                if arg.type in ("FunctionExpression", "ArrowFunctionExpression"):
+                    if arg.body.type == "BlockStatement":
+                        nodes = arg.body.body
+                    else:
+                        nodes = [arg.body]
                     function_params = arg.params
                     # 构造包含回调体内节点的 back_node，使参数回溯能找到函数体内的变量定义
                     callback_back_node = list(back_node)
@@ -1915,6 +1924,15 @@ def analysis(all_nodes, vul_function, back_node, vul_lineno, file_path, function
                         object_name = get_member_data(child_node.id)
                         analysis_objectexpression(child_node.init, vul_function, back_node, vul_lineno, file_path,
                                                   function_params, object_name)
+
+                    elif child_node.init.type == "ArrowFunctionExpression":
+                        if child_node.init.body.type == "BlockStatement":
+                            child_nodes = child_node.init.body.body
+                        else:
+                            child_nodes = [child_node.init.body]
+                        child_params = get_param_list(child_node.init.params)
+                        analysis(child_nodes, vul_function, back_node, vul_lineno, file_path,
+                                 function_params=child_params, in_funtion=True)
 
         if node.type == "WhileStatement":
             analysis_while(node, vul_function, back_node, vul_lineno, file_path, function_params)
