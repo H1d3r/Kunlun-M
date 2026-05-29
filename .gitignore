@@ -108,6 +108,9 @@ rules/*
 !rules/python/*
 !rules/python/__init__.py
 !rules/tamper/demo_python.py
+!rules/go/
+!rules/go/*
+!rules/go/__init__.py
 
 # upload
 uploads/*.zip
