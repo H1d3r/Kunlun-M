@@ -9,6 +9,8 @@ JAVA 内置函数/方法可控性知识库
     - passthrough: 返回值依赖哪些参数的位置（0-indexed）。
       [] 表示返回值与输入参数无关（如 len() 返回整数）。
     - safe: True 表示该函数做了有效安全过滤，返回值不再构成安全威胁。
+    - param_flow: 参数间数据流映射 {输出参数索引: 输入参数索引}（可选）。
+      值可以是 int（参数位置）或 str（隐式源如 "stdin"）。
 """
 from typing import Dict, List, Optional, Union
 
@@ -84,7 +86,33 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
         "getClass":     {"passthrough": [], "safe": True},
         "charAt":       {"passthrough": [0], "safe": False},
         "codePointAt":  {"passthrough": [], "safe": True},
-        "hashCode":     {"passthrough": [], "safe": True},
+
+        # ===== JDK 核心安全函数 =====
+        "Runtime.exec":                    {"passthrough": [0], "safe": False},
+        "ProcessBuilder.start":             {"passthrough": [0], "safe": False},
+        "Statement.execute":                {"passthrough": [0], "safe": False},
+        "Statement.executeQuery":           {"passthrough": [], "safe": False, "param_flow": {"self": 0}},
+        "Statement.executeUpdate":          {"passthrough": [], "safe": False, "param_flow": {"self": 0}},
+        "Class.forName":                    {"passthrough": [0], "safe": False},
+        "ClassLoader.loadClass":           {"passthrough": [0], "safe": False},
+        "Class.newInstance":                {"passthrough": [], "safe": False},
+
+        # ===== JDBC PreparedStatement =====
+        "PreparedStatement.setString":     {"passthrough": [], "safe": True, "param_flow": {"self": 1}},
+        "PreparedStatement.setInt":        {"passthrough": [], "safe": True, "param_flow": {"self": 1}},
+        "PreparedStatement.setObject":      {"passthrough": [], "safe": True, "param_flow": {"self": 1}},
+        "PreparedStatement.executeQuery":   {"passthrough": [], "safe": False, "param_flow": {"self": 0}},
+        "PreparedStatement.executeUpdate":   {"passthrough": [], "safe": False, "param_flow": {"self": 0}},
+
+        # ===== 集合类 param_flow =====
+        "HashMap.put":                       {"passthrough": [], "safe": True, "param_flow": {"self": 1}},
+        "ArrayList.add":                     {"passthrough": [], "safe": True, "param_flow": {"self": 0}},
+        "LinkedList.add":                    {"passthrough": [], "safe": True, "param_flow": {"self": 0}},
+        "HashSet.add":                       {"passthrough": [], "safe": True, "param_flow": {"self": 0}},
+
+        # ===== Servlet attribute param_flow =====
+        "HttpServletRequest.setAttribute":   {"passthrough": [], "safe": True, "param_flow": {"self": 1}},
+        "ServletContext.setAttribute":       {"passthrough": [], "safe": True, "param_flow": {"self": 1}},
 
         # ===== Spring Framework =====
         "HtmlUtils.htmlEscape":              {"passthrough": [0], "safe": True},
@@ -98,7 +126,7 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
         "getParameterMap":      {"passthrough": [0], "safe": False},
         "getHeader":            {"passthrough": [0], "safe": False},
         "getHeaders":           {"passthrough": [0], "safe": False},
-        "getHeaderNames":       {"passthrough": [0], "safe": False},
+        "getHeaderNames":       {"passthrough": [], "safe": False},
         "getCookies":           {"passthrough": [0], "safe": False},
         "getQueryString":       {"passthrough": [0], "safe": False},
         "getRequestURI":        {"passthrough": [0], "safe": False},
@@ -311,7 +339,7 @@ def lookup(func_name: str) -> Optional[Dict[str, Union[List[int], bool]]]:
     查询该语言的内置函数知识库
 
     :param func_name: 函数/方法名
-    :return: {"passthrough": [...], "safe": bool} 或 None
+    :return: {"passthrough": [...], "safe": bool, "param_flow": dict} 或 None
     """
     # 精确匹配
     if func_name in KNOWLEDGE:

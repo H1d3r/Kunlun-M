@@ -9,6 +9,8 @@ PYTHON 内置函数/方法可控性知识库
     - passthrough: 返回值依赖哪些参数的位置（0-indexed）。
       [] 表示返回值与输入参数无关（如 len() 返回整数）。
     - safe: True 表示该函数做了有效安全过滤，返回值不再构成安全威胁。
+    - param_flow: 参数间数据流映射 {输出参数索引: 输入参数索引}（可选）。
+      值可以是 int（参数位置）或 str（隐式源如 "stdin"）。
 """
 from typing import Dict, List, Optional, Union
 
@@ -80,7 +82,7 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
         "callable":         {"passthrough": [], "safe": True},
         "hasattr":          {"passthrough": [], "safe": True},
         "getattr":          {"passthrough": [0], "safe": False},
-        "setattr":          {"passthrough": [], "safe": True},
+        "setattr":          {"passthrough": [], "safe": True, "param_flow": {0: 2}},
         "abs":              {"passthrough": [], "safe": True},
         "round":            {"passthrough": [], "safe": True},
         "min":              {"passthrough": [0], "safe": False},
@@ -106,6 +108,23 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
         "urllib.parse.urlparse":  {"passthrough": [0], "safe": False},
         "yaml.dump":            {"passthrough": [0], "safe": False},
         "yaml.load":            {"passthrough": [0], "safe": False},
+
+        # ===== 代码执行/命令执行（危险 sink） =====
+        "eval":               {"passthrough": [0], "safe": False},
+        "exec":               {"passthrough": [], "safe": False},
+        "os.system":          {"passthrough": [0], "safe": False},
+        "os.popen":           {"passthrough": [0], "safe": False},
+        "subprocess.Popen":   {"passthrough": [0], "safe": False},
+        "subprocess.call":    {"passthrough": [0], "safe": False},
+        "subprocess.run":     {"passthrough": [0], "safe": False},
+        "subprocess.check_output": {"passthrough": [0], "safe": False},
+        "os.execv":            {"passthrough": [0], "safe": False},
+        "os.execvp":           {"passthrough": [0], "safe": False},
+
+        # ===== 输入源（source） =====
+        "input":              {"passthrough": [], "safe": False},  # Python 3 input
+        "open":               {"passthrough": [0], "safe": False},  # 文件内容透传
+        "urllib.request.urlopen": {"passthrough": [0], "safe": False},
 
         # ===== 安全过滤函数 =====
         "html.escape":              {"passthrough": [0], "safe": True},
@@ -230,7 +249,7 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
         "pandas.read_parquet":        {"passthrough": [0], "safe": False},
         "pandas.read_feather":        {"passthrough": [0], "safe": False},
         "pandas.read_hdf":            {"passthrough": [0], "safe": False},
-        "pandas.read_clipboard":      {"passthrough": [], "safe": True},
+        "pandas.read_clipboard":      {"passthrough": [], "safe": False},
         "pandas.DataFrame":           {"passthrough": [0], "safe": False},
         "pandas.Series":              {"passthrough": [0], "safe": False},
         "pandas.concat":              {"passthrough": [0], "safe": False},
@@ -326,7 +345,7 @@ def lookup(func_name: str) -> Optional[Dict[str, Union[List[int], bool]]]:
     查询该语言的内置函数知识库
 
     :param func_name: 函数/方法名
-    :return: {"passthrough": [...], "safe": bool} 或 None
+    :return: {"passthrough": [...], "safe": bool, "param_flow": dict} 或 None
     """
     # 精确匹配
     if func_name in KNOWLEDGE:

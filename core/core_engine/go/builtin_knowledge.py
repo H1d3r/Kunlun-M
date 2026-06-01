@@ -9,6 +9,8 @@ GOLANG 内置函数/方法可控性知识库
     - passthrough: 返回值依赖哪些参数的位置（0-indexed）。
       [] 表示返回值与输入参数无关（如 len() 返回整数）。
     - safe: True 表示该函数做了有效安全过滤，返回值不再构成安全威胁。
+    - param_flow: 参数间数据流映射 {输出参数索引: 输入参数索引}（可选）。
+      值可以是 int（参数位置）或 str（隐式源如 "stdin"）。
 """
 from typing import Dict, List, Optional, Union
 
@@ -102,12 +104,12 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
         "url.QueryUnescape":  {"passthrough": [0], "safe": False},
 
         # ===== encoding/json 解码 =====
-        "json.Unmarshal":     {"passthrough": [1], "safe": False},
+        "json.Unmarshal":     {"passthrough": [1], "safe": False, "param_flow": {1: 0}},
         "json.NewDecoder":    {"passthrough": [0], "safe": False},
         "json.Decoder.Decode": {"passthrough": [0], "safe": False},
 
         # ===== encoding/xml 解码 =====
-        "xml.Unmarshal":      {"passthrough": [1], "safe": False},
+        "xml.Unmarshal":      {"passthrough": [1], "safe": False, "param_flow": {1: 0}},
         "xml.NewDecoder":     {"passthrough": [0], "safe": False},
 
         # ===== reflect =====
@@ -265,6 +267,8 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
         "template.ParseFiles":  {"passthrough": [0], "safe": False},
         "template.ParseGlob":   {"passthrough": [0], "safe": False},
         "template.ParseFS":     {"passthrough": [0], "safe": False},
+        "template.Execute":     {"passthrough": [0], "safe": False, "param_flow": {"self": 0}},
+        "template.ExecuteTemplate": {"passthrough": [0], "safe": False, "param_flow": {"self": 0}},
 
         # ===== os 文件操作 — 路径遍历 =====
         "os.Open":              {"passthrough": [0], "safe": False},
@@ -300,10 +304,9 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
         "http.Client.Head":     {"passthrough": [0], "safe": False},
 
         # ===== fmt — 输出（可能 XSS） =====
-        "fmt.Fprintf":          {"passthrough": [1], "safe": False},  # w, format, args
+        "fmt.Fprintf":          {"passthrough": [1, 2], "safe": False},  # w, format, args (variadic)
         "fmt.Sprintf":          {"passthrough": [0], "safe": False},
         "fmt.Errorf":           {"passthrough": [0], "safe": False},
-        "fmt.Sprintf":          {"passthrough": [0], "safe": False},
 
         # ===== unsafe =====
         "unsafe.Pointer":       {"passthrough": [0], "safe": False},
@@ -421,7 +424,6 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
         "strings.Repeat":          {"passthrough": [0], "safe": False},
         "strings.Title":           {"passthrough": [0], "safe": False},
         "strings.Map":             {"passthrough": [1], "safe": False},
-        "strings.TrimSpace":       {"passthrough": [0], "safe": False},
         "strings.NewReplacer":     {"passthrough": [0], "safe": False},
         "strings.Reader":          {"passthrough": [0], "safe": False},
         "strings.Builder.String":  {"passthrough": [0], "safe": False},
@@ -551,7 +553,6 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
         "complex":          {"passthrough": [], "safe": True},
         "real":             {"passthrough": [], "safe": True},
         "imag":             {"passthrough": [], "safe": True},
-        "real":             {"passthrough": [], "safe": True},
 
         # ===== 类型转换（返回安全类型） =====
         "string":           {"passthrough": [0], "safe": False},
@@ -587,7 +588,7 @@ KNOWLEDGE: Dict[str, Dict[str, Union[List[int], bool]]] = {
 
         # ===== errors =====
         "errors.New":        {"passthrough": [0], "safe": False},
-        "fmt.Errorf":        {"passthrough": [0], "safe": False},
+        "fmt.Errorf":         {"passthrough": [0], "safe": False},
 
         # ===== regexp =====
         "regexp.Compile":        {"passthrough": [0], "safe": False},
@@ -630,7 +631,7 @@ def lookup(func_name: str) -> Optional[Dict[str, Union[List[int], bool]]]:
     查询该语言的内置函数知识库
 
     :param func_name: 函数/方法名
-    :return: {"passthrough": [...], "safe": bool} 或 None
+    :return: {"passthrough": [...], "safe": bool, "param_flow": dict} 或 None
     """
     # 精确匹配
     if func_name in KNOWLEDGE:
