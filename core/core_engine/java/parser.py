@@ -6,7 +6,7 @@ import javalang
 from utils.log import logger
 from core.pretreatment import ast_object as _ast_object_singleton
 from core.core_engine.trace_cache import TraceCache
-from core.core_engine.branch_constraint import BranchConstraint, BranchContext
+from core.core_engine.branch_constraint import BranchConstraint
 from core.core_engine.java.builtin_knowledge import lookup as lookup_builtin
 from core.core_engine.java.summary_generator import lookup_summary
 
@@ -338,8 +338,7 @@ def _get_java_literal(expr):
 
 
 def parameters_back(param_name, stmts, vul_lineno, file_path,
-                     repair_functions=None, controlled_params=None, depth=0, max_depth=10,
-                     branch_ctx=None):
+                     repair_functions=None, controlled_params=None, depth=0, max_depth=10):
     """
     反向追踪变量 param_name 的数据流来源。
     遍历 stmts 从 vul_lineno 往回找对 param_name 的赋值，判断赋值表达式是否可控。
@@ -402,78 +401,83 @@ def parameters_back(param_name, stmts, vul_lineno, file_path,
 
         # 控制流：递归进入
         if isinstance(stmt, javalang.tree.IfStatement):
-            # ===== 分支约束追踪 =====
             java_constraints = extract_constraints_from_java_expr(stmt.expression)
-            else_constraints = [c.negate() for c in java_constraints]
 
-            # if/then 分支
-            then_stmts = _get_block_stmts(stmt.then_statement) if stmt.then_statement else []
-            if then_stmts:
-                # if 分支：传入 if 约束
-                if branch_ctx and java_constraints:
-                    then_ctx = branch_ctx.merge(java_constraints)
-                elif java_constraints:
-                    then_ctx = BranchContext(java_constraints)
-                else:
-                    then_ctx = None
+            # 判断 sink 在哪个分支
+            sink_branch = _find_sink_branch_java(stmt, vul_lineno)
+            logger.debug("[AST][Java] sink_branch={} for param {} lineno {}".format(sink_branch, param_name, vul_lineno))
 
-                then_result = parameters_back(param_name, then_stmts, stmt_line, file_path,
-                                               repair_functions, controlled_params, depth + 1, max_depth,
-                                               branch_ctx=then_ctx)
-            else:
-                then_result = (-1, None, 0)
+            if sink_branch == 'if':
+                then_stmts = _get_block_stmts(stmt.then_statement) if stmt.then_statement else []
+                for c in java_constraints:
+                    if c.var_name == param_name and c.op in ('==', '===', 'in'):
+                        logger.info("[AST][Java] Branch constraint BLOCKS param {}: {} {}".format(param_name, c.op, c.value))
+                        _trace_cache.put(file_path, param_name, vul_lineno, (-1, None, 0))
+                        return (-1, None, 0)
+                if then_stmts:
+                    result = parameters_back(param_name, then_stmts, vul_lineno, file_path,
+                                              repair_functions, controlled_params, depth + 1, max_depth)
+                    if result[0] in (1, 2):
+                        _trace_cache.put(file_path, param_name, vul_lineno, result)
+                        return result
 
-            # else 分支
-            else_result = (-1, None, 0)
-            if stmt.else_statement:
-                # javalang 的 else_statement 可能是 IfStatement（else if）或 BlockStatement
-                if isinstance(stmt.else_statement, javalang.tree.IfStatement):
-                    # else if: 用否定约束递归处理
-                    if branch_ctx and else_constraints:
-                        else_ctx = branch_ctx.merge(else_constraints)
-                    elif else_constraints:
-                        else_ctx = BranchContext(else_constraints)
-                    else:
-                        else_ctx = None
-                    # 将 else if 作为 IfStatement 递归
-                    else_stmts = [stmt.else_statement]
-                    else_result = parameters_back(param_name, else_stmts, stmt_line, file_path,
-                                                  repair_functions, controlled_params, depth + 1, max_depth,
-                                                  branch_ctx=else_ctx)
+            elif sink_branch == 'else':
+                else_constraints = [c.negate() for c in java_constraints]
+                if stmt.else_statement and isinstance(stmt.else_statement, javalang.tree.IfStatement):
+                    # else if
+                    for c in else_constraints:
+                        if c.var_name == param_name and c.op in ('==', '===', 'in'):
+                            logger.info("[AST][Java] Branch constraint BLOCKS param {}: {} {}".format(param_name, c.op, c.value))
+                            _trace_cache.put(file_path, param_name, vul_lineno, (-1, None, 0))
+                            return (-1, None, 0)
+                    result = parameters_back(param_name, [stmt.else_statement], vul_lineno, file_path,
+                                              repair_functions, controlled_params, depth + 1, max_depth)
+                    if result[0] in (1, 2):
+                        _trace_cache.put(file_path, param_name, vul_lineno, result)
+                        return result
                 else:
                     else_stmts = _get_block_stmts(stmt.else_statement) if stmt.else_statement else []
+                    for c in else_constraints:
+                        if c.var_name == param_name and c.op in ('==', '===', 'in'):
+                            logger.info("[AST][Java] Branch constraint BLOCKS param {}: {} {}".format(param_name, c.op, c.value))
+                            _trace_cache.put(file_path, param_name, vul_lineno, (-1, None, 0))
+                            return (-1, None, 0)
                     if else_stmts:
-                        if branch_ctx and else_constraints:
-                            else_ctx = branch_ctx.merge(else_constraints)
-                        elif else_constraints:
-                            else_ctx = BranchContext(else_constraints)
+                        result = parameters_back(param_name, else_stmts, vul_lineno, file_path,
+                                                  repair_functions, controlled_params, depth + 1, max_depth)
+                        if result[0] in (1, 2):
+                            _trace_cache.put(file_path, param_name, vul_lineno, result)
+                            return result
+            else:
+                # outside: 保持遍历所有分支找重赋值
+                then_stmts = _get_block_stmts(stmt.then_statement) if stmt.then_statement else []
+                if then_stmts:
+                    then_result = parameters_back(param_name, then_stmts, vul_lineno, file_path,
+                                                  repair_functions, controlled_params, depth + 1, max_depth)
+                    if then_result[0] in (1, 2, 3):
+                        _trace_cache.put(file_path, param_name, vul_lineno, then_result)
+                        return then_result
+                if stmt.else_statement:
+                    if isinstance(stmt.else_statement, javalang.tree.IfStatement):
+                        else_result = parameters_back(param_name, [stmt.else_statement], vul_lineno, file_path,
+                                                      repair_functions, controlled_params, depth + 1, max_depth)
+                    else:
+                        else_stmts = _get_block_stmts(stmt.else_statement) if stmt.else_statement else []
+                        if else_stmts:
+                            else_result = parameters_back(param_name, else_stmts, vul_lineno, file_path,
+                                                          repair_functions, controlled_params, depth + 1, max_depth)
                         else:
-                            else_ctx = None
-
-                        else_result = parameters_back(param_name, else_stmts, stmt_line, file_path,
-                                                      repair_functions, controlled_params, depth + 1, max_depth,
-                                                      branch_ctx=else_ctx)
-
-            # ===== 约束影响判定 =====
-            if then_result[0] == 1 and else_result[0] in (1, 2, 3):
-                # if 可控但 else 也存在 → 不确定
-                _trace_cache.put(file_path, param_name, vul_lineno, (3, param_name, 0))
-                return (3, param_name, 0)
-
-            if then_result[0] in (1, 2):
-                _trace_cache.put(file_path, param_name, vul_lineno, then_result)
-                return then_result
-            if else_result[0] in (1, 2):
-                _trace_cache.put(file_path, param_name, vul_lineno, else_result)
-                return else_result
+                            else_result = (-1, None, 0)
+                    if else_result[0] in (1, 2, 3):
+                        _trace_cache.put(file_path, param_name, vul_lineno, else_result)
+                        return else_result
 
         elif isinstance(stmt, (javalang.tree.ForStatement,
                                javalang.tree.WhileStatement, javalang.tree.DoStatement)):
             block_stmts = _get_block_stmts(stmt)
             if block_stmts:
                 result = parameters_back(param_name, block_stmts, stmt_line, file_path,
-                                          repair_functions, controlled_params, depth + 1, max_depth,
-                                          branch_ctx=branch_ctx)
+                                          repair_functions, controlled_params, depth + 1, max_depth)
                 if result[0] in (1, 2):
                     _trace_cache.put(file_path, param_name, vul_lineno, result)
                     return result
@@ -773,6 +777,34 @@ def _judge_from_summary_java(summary, call_node, controlled_params):
             continue
 
     return None
+
+
+def _find_sink_branch_java(if_stmt, vul_lineno):
+    """判断 sink 在 Java if/else 的哪个分支"""
+    if not vul_lineno:
+        return 'outside'
+    vul_lineno = int(vul_lineno)
+
+    # then 体范围
+    then_stmts = _get_block_stmts(if_stmt.then_statement) if if_stmt.then_statement else []
+    if then_stmts:
+        then_line = _get_stmt_line(then_stmts[0])
+        then_end = _get_stmt_line(then_stmts[-1])
+        if then_line and then_end and then_line <= vul_lineno <= then_end:
+            return 'if'
+
+    # else 体
+    if if_stmt.else_statement:
+        if isinstance(if_stmt.else_statement, javalang.tree.IfStatement):
+            return _find_sink_branch_java(if_stmt.else_statement, vul_lineno)
+        else_stmts = _get_block_stmts(if_stmt.else_statement) if if_stmt.else_statement else []
+        if else_stmts:
+            else_line = _get_stmt_line(else_stmts[0])
+            else_end = _get_stmt_line(else_stmts[-1])
+            if else_line and else_end and else_line <= vul_lineno <= else_end:
+                return 'else'
+
+    return 'outside'
 
 
 def _get_stmt_line(stmt):

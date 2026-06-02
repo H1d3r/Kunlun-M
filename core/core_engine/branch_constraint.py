@@ -50,29 +50,3 @@ class BranchConstraint:
             value=self.value,
         )
 
-
-class BranchContext:
-    """管理当前分支的约束集合（供 JS/Python/Java/Go 引擎使用）"""
-
-    def __init__(self, constraints=None):
-        self.constraints = constraints or []
-
-    def merge(self, new_constraints):
-        """合并新约束（进入嵌套分支时），返回新的 BranchContext。"""
-        if not new_constraints:
-            return self
-        return BranchContext(self.constraints + list(new_constraints))
-
-    def applies_to(self, var_name):
-        """检查是否有约束涉及该变量。"""
-        return any(c.var_name == var_name for c in self.constraints)
-
-    def get_constraints_for(self, var_name):
-        """获取涉及指定变量的所有约束。"""
-        return [c for c in self.constraints if c.var_name == var_name]
-
-    def __bool__(self):
-        return bool(self.constraints)
-
-    def __repr__(self):
-        return f"BranchContext({self.constraints})"
