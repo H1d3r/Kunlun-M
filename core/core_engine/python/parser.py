@@ -1030,6 +1030,25 @@ def _trace_expr(param_name, expr, lineno, file_path,
         if result and result[0] in (1, 2):
             return result
 
+    # 6.5 三元表达式 (IfExp): result if cond else other
+    if isinstance(expr, ast.IfExp):
+        true_names = set()
+        false_names = set()
+        _collect_names(expr.body, true_names, 0)
+        _collect_names(expr.orelse, false_names, 0)
+        constraints = extract_constraints_from_py_expr(expr.test)
+        for c in constraints:
+            if c.op in ('==', '===', 'in'):
+                if c.var_name in true_names and c.var_name not in false_names:
+                    # 约束变量只在 true 分支 → true 路径中 var == fixed → 阻断
+                    logger.info("[AST][Python] Ternary constraint BLOCKS: {} {} {}".format(c.var_name, c.op, c.value))
+                    return -1, None, 0
+                elif c.var_name in false_names and c.var_name not in true_names:
+                    # 约束变量只在 false 分支 → false 路径中 var != fixed → 不阻断，追踪 false 分支
+                    return _trace_expr(param_name, expr.orelse, lineno, file_path,
+                                      repair_functions, controlled_params,
+                                      visited_funcs, depth, tree)
+
     # 7. 如果表达式包含变量名，继续反向追踪这些变量
     names = _collect_names(expr)
     code4_candidates = []

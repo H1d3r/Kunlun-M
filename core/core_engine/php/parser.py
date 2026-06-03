@@ -1166,6 +1166,7 @@ def _find_sink_branch(if_node, lineno):
     return 'outside'
 
 
+
 def extract_constraints_from_php_expr(expr):
     """
     从 PHP 条件表达式中提取 BranchConstraint 列表。
@@ -1424,25 +1425,36 @@ def _parameters_back_impl(param, nodes, function_params=None, lineno=0,
                 code = "{}={}?{}:{}".format(param_name, param_ex, terna1, terna2)
                 scan_chain.append(('TernaryOp', code, file_path, node.lineno))
 
-                # 没办法判断这种三元条件的结果
-                # 如果1是可控，则1，如果2是可控则2
-                # 如果1和2中有-1，则选另一个
-                # 否则选1
-
-                is_co, cp = is_controllable(terna1)
-                if is_co == 1:
-                    param = terna1
-                else:
-                    is_co2, cp = is_controllable(terna2)
-
-                    if is_co2 == 1:
-                        param = terna2
-
-                    else:
-                        if is_co == -1:
+                # 分支约束追踪
+                constraints = extract_constraints_from_php_expr(param_ex)
+                true_names = _collect_var_names(terna1)
+                false_names = _collect_var_names(terna2)
+                for c in constraints:
+                    if c.op in ('==', '===', 'in'):
+                        if c.var_name in true_names and c.var_name not in false_names:
+                            # 约束变量只在 true 分支 → true 路径中 var == fixed → 阻断
+                            logger.info("[AST] Ternary constraint BLOCKS: {} {} {}".format(c.var_name, c.op, c.value))
+                            return -1, param, 0
+                        elif c.var_name in false_names and c.var_name not in true_names:
+                            # 约束变量只在 false 分支 → false 路径中 var != fixed → 不阻断，追踪 false 分支
                             param = terna2
+                            break
+                else:
+                    # 无法判断变量在哪个分支 → 回退到原始启发式
+                    is_co, cp = is_controllable(terna1)
+                    if is_co == 1:
+                        param = terna1
+                    else:
+                        is_co2, cp = is_controllable(terna2)
+
+                        if is_co2 == 1:
+                            param = terna2
+
                         else:
-                            param = terna1
+                            if is_co == -1:
+                                param = terna2
+                            else:
+                                param = terna1
 
             if param_name == param_node and isinstance(node.expr, php.FunctionCall):  # 当变量来源是函数时，处理函数内容
                 function_name = node.expr.name

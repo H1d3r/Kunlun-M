@@ -1301,7 +1301,7 @@ def parameters_back(param, nodes, function_params=None, lineno=0,
                 # 获取右值
                 param_expr = node.init
                 param_expr_name = get_member_data(param_expr)
-                expr_lineno = node.init.loc.start.line if param_expr else 0
+                expr_lineno = node.init.loc.start.line if param_expr and hasattr(param_expr, 'loc') and param_expr.loc else 0
 
                 # log
                 logger.debug(
@@ -1315,6 +1315,30 @@ def parameters_back(param, nodes, function_params=None, lineno=0,
 
                 if is_co == 1:
                     return is_co, cp, expr_lineno
+
+                # 三元运算符 (ConditionalExpression) 分支约束追踪
+                # 必须在 isback 检查之前执行，否则 isback=True 时会跳过约束分析直接返回
+                if hasattr(param_expr, "type") and param_expr.type == "ConditionalExpression":
+                    true_names = set()
+                    _collect_js_var_names(param_expr.consequent, true_names)
+                    false_names = set()
+                    _collect_js_var_names(param_expr.alternate, false_names)
+                    test_expr = param_expr.test.toDict() if hasattr(param_expr.test, 'toDict') else param_expr.test
+                    constraints = extract_constraints_from_js_expr(test_expr)
+                    for c in constraints:
+                        if c.op in ('==', '===', 'in'):
+                            if c.var_name in true_names and c.var_name not in false_names:
+                                # 约束变量只在 true 分支 → true 路径中 var == fixed → 阻断
+                                logger.info("[AST] Ternary constraint BLOCKS: {} {} {}".format(c.var_name, c.op, c.value))
+                                return -1, param, 0
+                            elif c.var_name in false_names and c.var_name not in true_names:
+                                # 约束变量只在 false 分支 → false 路径中 var != fixed → 不阻断，追踪 false 分支
+                                param = get_member_data(param_expr.alternate)
+                                is_co, cp, expr_lineno = parameters_back(param, nodes[:-1], function_params, lineno,
+                                                                         function_flag=0, vul_function=vul_function,
+                                                                         file_path=file_path,
+                                                                         isback=True, method_name=method_name)
+                                return is_co, cp, expr_lineno
 
                 if isback is True:
                     return is_co, cp, expr_lineno

@@ -302,8 +302,13 @@ def extract_constraints_from_java_expr(expr):
     if isinstance(expr, javalang.tree.MethodInvocation):
         if hasattr(expr, 'member') and expr.member == 'equals' and len(expr.arguments or []) >= 1:
             obj = _get_java_expr_name(expr.qualifier) if expr.qualifier else None
-            if obj:
+            # 当 qualifier 是字面量（如 "test".equals(action)），从 argument 中提取变量名
+            if not obj and expr.qualifier and isinstance(expr.qualifier, javalang.tree.Literal):
+                obj = _get_java_expr_name(expr.arguments[0])
+                value = _get_java_literal(expr.qualifier)
+            else:
                 value = _get_java_literal(expr.arguments[0])
+            if obj:
                 c = BranchConstraint(var_name=obj, op='==', value=value)
                 # ljavalang: !expr 通过 prefix_operators 处理
                 if hasattr(expr, 'prefix_operators') and '!' in expr.prefix_operators:
@@ -582,8 +587,23 @@ def _trace_expr(expr, stmts, lineno, file_path, repair_functions, controlled_par
                 return result
         return (-1, None, 0)
 
-    # 三元表达式 → 追踪两个分支
+    # 三元表达式 → 分支约束追踪
     if isinstance(expr, javalang.tree.TernaryExpression):
+        true_refs = _collect_member_references(expr.if_true)
+        false_refs = _collect_member_references(expr.if_false)
+        constraints = extract_constraints_from_java_expr(expr.condition)
+        for c in constraints:
+            if c.op in ('==', '===', 'in'):
+                if c.var_name in true_refs and c.var_name not in false_refs:
+                    # 约束变量只在 true 分支 → true 路径中 var == fixed → 阻断
+                    logger.info("[AST][Java] Ternary constraint BLOCKS: {} {} {}".format(c.var_name, c.op, c.value))
+                    return (-1, None, 0)
+                elif c.var_name in false_refs and c.var_name not in true_refs:
+                    # 约束变量只在 false 分支 → false 路径中 var != fixed → 不阻断，追踪 false 分支
+                    return _trace_expr(expr.if_false, stmts, lineno, file_path,
+                                      repair_functions, controlled_params, depth + 1, max_depth)
+
+        # 回退：无明确约束阻断
         true_result = _trace_expr(expr.if_true, stmts, lineno, file_path,
                                    repair_functions, controlled_params, depth + 1, max_depth)
         if true_result[0] == 1:
