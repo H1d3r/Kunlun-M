@@ -20,7 +20,7 @@ ASSIGNMENT_TYPES = ('short_var_declaration', 'assignment_statement', 'var_declar
 # 语句类型
 STATEMENT_TYPES = (
     'short_var_declaration', 'assignment_statement', 'var_declaration',
-    'if_statement', 'for_statement', 'switch_statement', 'select_statement',
+    'if_statement', 'for_statement', 'expression_switch_statement', 'type_switch_statement', 'select_statement',
     'return_statement', 'expression_statement', 'block',
     'defer_statement', 'go_statement', 'send_statement',
     'inc_statement', 'dec_statement',
@@ -209,7 +209,7 @@ def _find_assignment_in_block(block_node, var_name):
             result = _search_in_for(stmt, var_name)
             if result:
                 return result
-        elif stmt.type == 'switch_statement':
+        elif stmt.type in ('expression_switch_statement', 'type_switch_statement'):
             result = _search_in_switch(stmt, var_name)
             if result:
                 return result
@@ -331,7 +331,7 @@ def _search_in_for(for_node, var_name):
 def _search_in_switch(switch_node, var_name):
     """在 switch 语句中搜索赋值"""
     for child in switch_node.children:
-        if child.type == 'expression_case' or child.type == 'type_case':
+        if child.type in ('expression_case', 'type_case', 'default_case'):
             for cc in child.children:
                 if cc.type == 'block':
                     result = _find_assignment_in_block(cc, var_name)
@@ -892,8 +892,30 @@ def trace_go_stmt(var_name, stmt_node, file_path, vul_lineno, to_line,
                         function_back_go_fn, trace_variable_fn
                     )
 
-    # switch 语句
-    elif stmt_node.type == 'switch_statement':
+    # switch 语句 (expression_switch_statement)
+    elif stmt_node.type == 'expression_switch_statement' or stmt_node.type == 'type_switch_statement':
+        # switch/case 分支约束追踪
+        sink_in_case = False
+        sink_case_is_default = False
+        target_line = int(vul_lineno) if vul_lineno else 0
+
+        for child in stmt_node.children:
+            if child.type in ('expression_case', 'type_case', 'default_case'):
+                case_start = child.start_point[0] + 1
+                case_end = child.end_point[0] + 1
+                if target_line and case_start <= target_line <= case_end:
+                    if child.type == 'default_case':
+                        sink_case_is_default = True
+                    else:
+                        sink_in_case = True
+                    break
+
+        if sink_in_case:
+            # sink 在非 default case 中 → switch expr == case_value → 阻断
+            logger.info("[AST][Go] Switch constraint BLOCKS: sink in non-default case (line {})".format(lineno))
+            return (-1, None, 0)
+
+        # default case 或 sink 不在 switch 中 → 搜索赋值并回溯
         result = _search_in_switch(stmt_node, var_name)
         if result:
             rhs_node, lineno = result

@@ -516,6 +516,53 @@ def parameters_back(param_name, stmts, vul_lineno, file_path,
                     _trace_cache.put(file_path, param_name, vul_lineno, result)
                     return result
 
+        # switch/case 分支约束追踪
+        if isinstance(stmt, javalang.tree.SwitchStatement):
+            switch_line = _get_stmt_line(stmt)
+            # 判断 sink 在哪个 case 中
+            sink_case_is_default = False
+            sink_in_case = False
+            if stmt.cases:
+                for case in stmt.cases:
+                    case_stmts = case.statements or []
+                    if not case_stmts:
+                        continue
+                    first_line = _get_stmt_line(case_stmts[0])
+                    last_line = _get_stmt_line(case_stmts[-1])
+                    if first_line and last_line and first_line <= target_line <= last_line:
+                        if not case.case:  # default case 的 case 属性为空列表
+                            sink_case_is_default = True
+                        else:
+                            sink_in_case = True
+                        break
+
+            if sink_in_case:
+                # sink 在非 default case 中 → switch expr == case_value → 阻断
+                logger.info("[AST][Java] Switch constraint BLOCKS: sink in non-default case (line {})".format(vul_lineno))
+                _trace_cache.put(file_path, param_name, vul_lineno, (-1, None, 0))
+                return (-1, None, 0)
+
+            # default case 或 sink 不在任何 case 中 → 遍历目标 case
+            # 如果目标 case 中未找到赋值，fallthrough 让外层 for 循环继续搜索 switch 之前的 stmts
+            if stmt.cases:
+                for case in stmt.cases:
+                    case_stmts = case.statements or []
+                    if not case_stmts:
+                        continue
+                    # 只处理 sink 所在的 case
+                    first_line = _get_stmt_line(case_stmts[0])
+                    last_line = _get_stmt_line(case_stmts[-1])
+                    if first_line and last_line and first_line <= target_line <= last_line:
+                        result = parameters_back(param_name, case_stmts, vul_lineno, file_path,
+                                                  repair_functions, controlled_params, depth + 1, max_depth)
+                        if result[0] in (1, 2):
+                            _trace_cache.put(file_path, param_name, vul_lineno, result)
+                            return result
+                        # case 内未找到赋值 → 不清除缓存，不写入 -1
+                        # break 出内层 for，让外层 for 循环继续处理 switch 之前的 stmts
+                        break
+
+    # for 循环结束后仍未找到 → 不可控
     _trace_cache.put(file_path, param_name, vul_lineno, (-1, None, 0))
     return (-1, None, 0)
 

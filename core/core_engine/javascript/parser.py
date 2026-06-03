@@ -1835,6 +1835,44 @@ def parameters_back(param, nodes, function_params=None, lineno=0,
             if is_co == 1:
                 return is_co, cp, expr_lineno
 
+        elif node.type == "SwitchStatement":
+            logger.debug(
+                "[AST] param {} line {} in Switch, start branch constraint analysis".format(param_name, node.loc.start.line if node.loc else 0))
+
+            # switch/case 分支约束追踪
+            # 判断 sink（lineno）在哪个 case 中
+            sink_in_default = False
+            sink_in_case = False
+            if node.cases and lineno > 0:
+                for i, switch_case in enumerate(node.cases):
+                    if not switch_case.loc:
+                        continue
+                    case_start = switch_case.loc.start.line
+                    case_end = switch_case.loc.end.line
+
+                    if case_start <= lineno <= case_end:
+                        if switch_case.test is None:
+                            sink_in_default = True
+                        else:
+                            sink_in_case = True
+                        break
+
+            if sink_in_case:
+                # sink 在非 default case 中 → switch expr == case_value → 阻断
+                logger.info("[AST] Switch constraint BLOCKS: sink in non-default case (line {})".format(lineno))
+                return -1, param, 0
+
+            # sink 在 default 或不在 switch 中 → 正常回溯每个 case
+            if node.cases:
+                for switch_case in node.cases:
+                    if switch_case.consequent:
+                        is_co, cp, expr_lineno = parameters_back(param, switch_case.consequent, function_params, lineno,
+                                                                 function_flag=1, vul_function=vul_function,
+                                                                 file_path=file_path,
+                                                                 isback=isback, method_name=method_name)
+                        if is_co == 1:
+                            return is_co, cp, expr_lineno
+
         elif node.type == "WhileStatement":
             logger.debug("[AST] Param {} line {} in while, start ast in while".format(param_name, node.loc.start.line))
 
@@ -2220,6 +2258,15 @@ def analysis(all_nodes, vul_function, back_node, vul_lineno, file_path, function
 
         if node.type == "IfStatement":
             analysis_If(node, vul_function, back_node, vul_lineno, file_path, function_params)
+
+        if node.type == "SwitchStatement":
+            # switch 语句：遍历 case 的 consequent，追加到 back_node
+            if node.cases:
+                for switch_case in node.cases:
+                    if switch_case.consequent:
+                        back_node.append(switch_case)
+                        for stmt in switch_case.consequent:
+                            analysis([stmt], vul_function, back_node, vul_lineno, file_path, function_params)
 
         if node.type == "VariableDeclaration":  # 函数赋值表达式
             for child_node in node.declarations:

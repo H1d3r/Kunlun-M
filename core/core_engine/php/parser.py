@@ -1855,31 +1855,28 @@ def _parameters_back_impl(param, nodes, function_params=None, lineno=0,
 
         elif isinstance(node, php.Switch):
             logger.debug(
-                "[AST] param {} line {} in Switch, start ast in Switch".format(param_name, node.lineno))
+                "[AST] param {} line {} in Switch, checking branch constraint".format(param_name, node.lineno))
 
+            # 判断 sink 是否在非 default case 中
+            sink_in_non_default = False
             case_nodes = node.nodes
+            for i, case_node in enumerate(case_nodes):
+                if getattr(case_node, 'expr', None) is not None:  # 非 default case
+                    case_start = case_node.lineno
+                    case_end = case_nodes[i + 1].lineno if i + 1 < len(case_nodes) else case_start + 50
+                    if case_start <= lineno <= case_end:
+                        sink_in_non_default = True
+                        break
 
-            for case_node in case_nodes:
-                is_co, cp, expr_lineno = parameters_back(param, case_node.nodes, function_params, lineno,
-                                                         function_flag=1, vul_function=vul_function,
-                                                         file_path=file_path,
-                                                         isback=isback, parent_node=node)
+            if sink_in_non_default:
+                # sink 在非 default case 中 → switch expr == case_value → 阻断
+                logger.info("[AST] Switch constraint BLOCKS: sink in non-default case (line {})".format(lineno))
+                return -1, param, 0
 
-                if is_co == 1:  # 目标确定直接返回
-                    return is_co, cp, expr_lineno
-
-                if cp == 3:
-                    _is_co = is_co
-                    _cp = cp
-
-            if _is_co == 3 and _cp != param:
-                is_co = _is_co
-                cp = _cp
-                param = _cp
-
-                file_path = os.path.normpath(file_path)
-                code = "New {} param back from Switch".format(param)
-                scan_chain.append(('NewSwitchBack', code, file_path, node.lineno))
+            # sink 在 default case 或不在任何 case 中 → 跳过 switch 节点，继续外层回溯
+            return parameters_back(param, nodes[:-1], function_params, lineno,
+                                    function_flag=function_flag, vul_function=vul_function,
+                                    file_path=file_path, isback=isback, parent_node=node)
 
         elif isinstance(node, php.Try):
             logger.debug(
