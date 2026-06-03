@@ -1630,6 +1630,10 @@ def scan_parser(sensitive_func, vul_lineno, file_path, repair_functions=[], cont
                         # 继续处理下一个参数
                     elif code == 3:
                         scan_results.append({"code": 3, "chain": chain, "source": cp})
+                    elif code == -1:
+                        # 分支约束阻断：参数不可控
+                        scan_results.append({"code": -1, "chain": chain, "source": cp})
+                        break
                 else:
                     continue
                 break

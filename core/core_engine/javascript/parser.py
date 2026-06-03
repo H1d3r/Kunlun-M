@@ -2123,9 +2123,14 @@ def set_scan_results(is_co, cp, expr_lineno, sink, param, vul_lineno):
         'sink_lineno': vul_lineno,
         "chain": scan_chain,
     }
-    if result['code'] > 0:  # 查出来漏洞结果添加到结果信息中
+    if result['code'] in (1, 2, 3):
         results.append(result)
         scan_results += results
+    elif result['code'] == -1:
+        # 分支约束阻断：仅在没有其他结果时保留
+        if not scan_results:
+            results.append(result)
+            scan_results += results
 
 
 def _resolve_class_method_calls(nodes, method_param_map):
