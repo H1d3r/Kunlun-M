@@ -2264,6 +2264,8 @@ def scan_parser(rule_match, vul_lineno, file_path,
     :param is_config_vuln: 是否配置型漏洞
     :return: 扫描结果列表
     """
+    _trace_cache.clear()
+
     if repair_functions is None:
         repair_functions = []
     if controlled_params is None:

@@ -2475,6 +2475,7 @@ def scan_parser(rule_match, vul_lineno, file_path,
     code 含义：1=可控, 2=已修复, 3=未确认, 4=NewFunction, -1=不可控
     """
     global scan_results, is_repair_functions, is_controlled_params, scan_chain
+    _trace_cache.clear()
 
     if repair_functions is None:
         repair_functions = []
