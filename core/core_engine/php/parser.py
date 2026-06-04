@@ -1167,6 +1167,44 @@ def _find_sink_branch(if_node, lineno):
 
 
 
+# 类型验证函数 — 条件为 true 时参数被约束为安全类型
+_TYPE_VALIDATION_FUNCS = frozenset({
+    'is_numeric', 'is_int', 'is_integer', 'is_float', 'is_double',
+    'ctype_digit', 'ctype_alnum', 'ctype_alpha', 'ctype_xdigit',
+})
+
+
+def _extract_func_name(name_node):
+    """从 FunctionCall.name 节点提取函数名字符串"""
+    if isinstance(name_node, str):
+        return name_node
+    return None
+
+
+def _extract_regex_pattern(arg_node):
+    """从 preg_match 的第一个参数提取正则模式字符串"""
+    if isinstance(arg_node, php.String):
+        return arg_node.value
+    return None
+
+
+def _is_strict_regex(pattern):
+    """
+    判断正则是否为严格全匹配模式（安全）。
+    条件：以 ^ 开头、以 $ 结尾、中间不含任意字符匹配（. 或 .* 或 .+）。
+    """
+    if not pattern or len(pattern) < 4:
+        return False
+    if not pattern.startswith('^') or not pattern.endswith('$'):
+        return False
+    body = pattern[1:-1]
+    # 不含 .（任意字符匹配），但允许 \.（转义的点）
+    stripped = body.replace('\\.', '')
+    if '.' in stripped:
+        return False
+    return True
+
+
 def extract_constraints_from_php_expr(expr):
     """
     从 PHP 条件表达式中提取 BranchConstraint 列表。
@@ -1179,6 +1217,8 @@ def extract_constraints_from_php_expr(expr):
     - $var === value        -> BinaryOp(op='===')
     - $a && $b              -> BinaryOp(op='&&')
     - $a || $b              -> BinaryOp(op='||')
+    - is_numeric($var)      -> FunctionCall('is_numeric', [...])
+    - preg_match('/^...$/', $var) -> FunctionCall('preg_match', [...])
     """
     if expr is None:
         return []
@@ -1213,6 +1253,27 @@ def extract_constraints_from_php_expr(expr):
             var_name = _extract_var_name(inner.expr)
             if var_name:
                 constraints.append(BranchConstraint(var_name=var_name, op='isset'))
+
+    elif isinstance(expr, php.FunctionCall):
+        func_name = _extract_func_name(expr.name)
+        if func_name in _TYPE_VALIDATION_FUNCS:
+            for arg in (expr.params or []):
+                var_name = _extract_var_name(arg)
+                if var_name:
+                    constraints.append(BranchConstraint(
+                        var_name=var_name, op='type_validated',
+                        value=func_name
+                    ))
+        elif func_name == 'preg_match':
+            if expr.params and len(expr.params) >= 2:
+                pattern = _extract_regex_pattern(expr.params[0])
+                if pattern and _is_strict_regex(pattern):
+                    var_name = _extract_var_name(expr.params[1])
+                    if var_name:
+                        constraints.append(BranchConstraint(
+                            var_name=var_name, op='regex_validated',
+                            value=pattern
+                        ))
 
     elif isinstance(expr, php.BinaryOp):
         if expr.op == '&&':
@@ -1250,11 +1311,14 @@ def extract_constraints_from_php_expr(expr):
 def _extract_var_name(node):
     """
     从 AST 节点中提取变量名（字符串形式）。
-    支持 Variable, ArrayOffset 等常见形式。
+    支持 Variable, Parameter, ArrayOffset 等常见形式。
     返回 None 表示无法提取。
     """
     if node is None:
         return None
+    if isinstance(node, php.Parameter):
+        # phply 函数参数被包装为 Parameter 节点，实际参数在 .node 中
+        node = node.node
     if isinstance(node, php.Variable):
         name = node.name
         if isinstance(name, str):
@@ -1430,7 +1494,7 @@ def _parameters_back_impl(param, nodes, function_params=None, lineno=0,
                 true_names = _collect_var_names(terna1)
                 false_names = _collect_var_names(terna2)
                 for c in constraints:
-                    if c.op in ('==', '===', 'in'):
+                    if c.op in ('==', '===', 'in', 'type_validated', 'regex_validated'):
                         if c.var_name in true_names and c.var_name not in false_names:
                             # 约束变量只在 true 分支 → true 路径中 var == fixed → 阻断
                             logger.info("[AST] Ternary constraint BLOCKS: {} {} {}".format(c.var_name, c.op, c.value))
@@ -1814,7 +1878,7 @@ def _parameters_back_impl(param, nodes, function_params=None, lineno=0,
             # 3. 立即检查约束（仅在 sink 在具体分支内时执行，即 sink_branch != 'outside'）
             if sink_branch != 'outside':
                 for c in constraints:
-                    if c.var_name == param_name and c.op in ('==', '===', 'in'):
+                    if c.var_name == param_name and c.op in ('==', '===', 'in', 'type_validated', 'regex_validated'):
                         # 等值约束：变量被限定为固定值，不可控
                         logger.info("[AST] Branch constraint BLOCKS param {}: {} {}".format(param_name, c.op, c.value))
                         return -1, param, 0
@@ -1846,7 +1910,7 @@ def _parameters_back_impl(param, nodes, function_params=None, lineno=0,
                 if body_start and body_end and body_start <= _lineno <= body_end:
                     constraints = extract_constraints_from_php_expr(node.expr)
                     for c in constraints:
-                        if c.var_name == param_name and c.op in ('==', '===', 'in'):
+                        if c.var_name == param_name and c.op in ('==', '===', 'in', 'type_validated', 'regex_validated'):
                             logger.info("[AST] While constraint BLOCKS param {}: {} {}".format(param_name, c.op, c.value))
                             return -1, param, 0
 
