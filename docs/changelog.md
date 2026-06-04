@@ -1,5 +1,11 @@
 ## 更新日志
 - 2026-06-04
+  - KunLun-M 2.13.2
+  - **7 语言引擎回溯分析设计文档（docs/design/）**
+    - 新增扫描流水线整体架构设计文档
+    - 新增 PHP/JavaScript/Python/Java/Go/C-C++ 引擎回溯分析设计文档（6 份）
+    - 新增共享模块设计文档（function_summary / branch_constraint / trace_cache / builtin_knowledge）
+    - 包含各引擎从 Sink 到最终判定漏洞成立的完整回溯链路分析
   - **分支约束追踪补全 — C 三元 / Python match/case / while 循环 / JS ForStatement 修复（6 语言）**
     - C/C++: 新增三元表达式（conditional_expression）约束追踪
     - Python: 新增 match/case（Python 3.10+）分支约束追踪，兼容 Python < 3.10
