@@ -1181,11 +1181,17 @@ def extract_constraints_from_js_expr(expr):
             obj_type = obj.get('type', '') if isinstance(obj, dict) else ''
 
             # /regex/.test(x) — 正则对象的 test 方法
-            if prop_name == 'test' and obj_type == 'Literal':
-                regex_str = obj.get('regex', {}).get('pattern', '') if isinstance(obj.get('regex'), dict) else ''
-                # esprima 将正则字面量存为 regex.pattern，fallback 也检查 value
-                if not regex_str:
-                    regex_str = obj.get('value', '')
+            if prop_name == 'test' and obj_type in ('Literal', 'RegExpLiteral'):
+                regex_str = ''
+                if obj_type == 'RegExpLiteral':
+                    pattern = obj.get('pattern', '')
+                    flags = obj.get('flags', '')
+                    regex_str = pattern
+                else:
+                    regex_str = obj.get('regex', {}).get('pattern', '') if isinstance(obj.get('regex'), dict) else ''
+                    # esprima 将正则字面量存为 regex.pattern，fallback 也检查 value
+                    if not regex_str:
+                        regex_str = obj.get('value', '')
                 if regex_str and isinstance(regex_str, str) and _is_strict_js_regex(regex_str):
                     args = expr.get('arguments', [])
                     if args:
