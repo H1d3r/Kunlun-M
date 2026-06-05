@@ -1154,8 +1154,17 @@ def extract_constraints_from_js_expr(expr):
     if node_type == 'BinaryExpression':
         op = expr.get('operator', '')
         if op in ('==', '===', '!=', '!=='):
-            left = expr.get('left', {})
-            var_name = _extract_js_var_name(left)
+            left_expr = expr.get('left', {})
+            # typeof x === 'number' -> type_validated
+            if left_expr.get('type') == 'UnaryExpression' and left_expr.get('operator') == 'typeof':
+                inner = left_expr.get('argument', {})
+                var_name = _extract_js_var_name(inner)
+                if var_name:
+                    value = _extract_js_literal(expr.get('right', {}))
+                    if value is not None:
+                        constraints.append(BranchConstraint(var_name=var_name, op='type_validated', value='typeof.' + str(value)))
+                        return constraints
+            var_name = _extract_js_var_name(left_expr)
             if var_name:
                 value = _extract_js_literal(expr.get('right', {}))
                 constraints.append(BranchConstraint(var_name=var_name, op=op, value=value))
