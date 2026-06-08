@@ -61,6 +61,8 @@ class autorule:
                 reg = r"(?:\A|\s|\b)(\w+\s*(?==))|((?<=\(|,|=)[^\(\)|,|'|\"]+)"
             else:
                 reg = r"(?<=\(|,|=)[^\(\)|,|'|\"]+"
+        elif self.language.lower() == 'go':
+            reg = r"(?<=\(|,|=)[^\(\)|,|'|\`]+"
         else:
             return None
         if re.search(reg, sql_sen, re.I):

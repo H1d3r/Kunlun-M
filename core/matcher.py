@@ -218,7 +218,7 @@ class VulnerabilityMatcher(object):
                 return True, 'Function-param-controllable', r['chain']
 
         for r in result:
-            if r['code'] == 4:  # 配置型漏洞 / 新规则生成
+            if r['code'] in (4, 5):  # 配置型漏洞 / 新规则生成
                 # 区分：chain 中有 NewFunction 标记 → NewCore 二次扫描
                 # chain 中无 NewFunction → 配置型漏洞（code 1 等价）
                 chain = r.get('chain', [])
@@ -262,7 +262,7 @@ class VulnerabilityMatcher(object):
 
         else:
             if type(data) is tuple:
-                if int(data[0]) == 4:
+                if int(data[0]) in (4, 5):
                     return False, 'New Core', data[1]
 
             logger.debug('[CVI-{cvi}] [PARAM-CONTROLLABLE] Param Not Controllable'.format(cvi=self.cvi))
