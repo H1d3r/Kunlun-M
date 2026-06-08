@@ -88,8 +88,14 @@ class CAST(object):
             'go': {
                 'functions': r'func\s+(?:\(\w+\s+\*?\w+\)\s+)?(\w+)\s*\(',
                 'string': r'"([^"]*)"',
-                'assign_string': r'({0}\s*:?=\s*(.+))',
+                'assign_string': r'({0}\s*:?=\\s*(.+))',
                 'annotation': r'(//|/\*|\*)+',
+            },
+            'python': {
+                'functions': r'(?:def\s+)(\w+)\s*\(',
+                'string': r"""(?:['\"])(.*)(?:['\"])""",
+                'assign_string': r'({0}\s*=\s?[\'\"](.*)[\'\"])',
+                'annotation': r'(#|\\\*|//|\*)+',
             }
         }
         logger.debug("[AST] [LANGUAGE] {language}".format(language=self.language))

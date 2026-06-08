@@ -93,6 +93,9 @@ tests/real_test/*
 tests/*
 !tests/nodejs/
 !tests/c/
+!tests/python/
+!tests/test_python_cross_file.py
+!tests/test_js_cross_file.py
 
 # scan artifacts
 *.pretty
