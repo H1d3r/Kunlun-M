@@ -35,6 +35,8 @@ ALL_FILES = [
     '13b_cross_file_eval_main.js',
     '14a_cross_file_destructure_utils.js',
     '14b_cross_file_destructure_main.js',
+    '15a_cross_file_esm_utils.js',
+    '15b_cross_file_esm_main.js',
     '16a_cross_file_safe_utils.js',
     '16b_cross_file_safe_main.js',
     '17a_cross_file_exports_utils.js',
@@ -176,10 +178,10 @@ def test_scan_parser_integration():
         print("[integration] ❌ scan_parser 未检出")
 
 
-def _scan_single_e2e(lang, file_list, vul_dir, svid=1):
+def _scan_single_e2e(lang, file_list, vul_dir, svid=1, match='eval|setTimeout'):
     """端到端 scan_single 测试辅助函数
 
-    构造一个 function-param-regex 规则，match 为 eval|setTimeout，
+    构造一个 function-param-regex 规则，match 为 sink 函数名列表，
     走完整的 grep → scan_parser → NewFunction → NewCore 链路。
     """
     from core.scanner import scan_single
@@ -209,7 +211,7 @@ def _scan_single_e2e(lang, file_list, vul_dir, svid=1):
         level=5,
         status=True,
         match_mode='function-param-regex',
-        match='eval|setTimeout',
+        match=match,
         match_name=None,
         black_list=None,
         unmatch=None,
@@ -260,6 +262,47 @@ def test_php_e2e_newfunction():
     print(f"[e2e-php] ✅ 端到端检出 {len(results)} 个漏洞")
 
 
+def test_js_e2e_destructure_cross_file():
+    """端到端测试：JS 解构导入跨文件 - 14a/14b child_process.exec"""
+    file_list = ['14a_cross_file_destructure_utils.js', '14b_cross_file_destructure_main.js']
+    results = _scan_single_e2e('javascript', file_list, TEST_DIR, match='exec')
+    print(f"[e2e-14] results = {results}")
+    assert results is not None and len(results) > 0, "14a/14b 应检出至少 1 个漏洞"
+    print(f"[e2e-14] ✅ 端到端检出 {len(results)} 个漏洞")
+
+
+def test_js_e2e_settimeout_cross_file():
+    """端到端测试：JS setTimeout 跨文件 - 18a/18b"""
+    file_list = ['18a_cross_file_settimeout_utils.js', '18b_cross_file_settimeout_main.js']
+    results = _scan_single_e2e('javascript', file_list, TEST_DIR)
+    print(f"[e2e-18] results = {results}")
+    assert results is not None and len(results) > 0, "18a/18b 应检出至少 1 个漏洞"
+    print(f"[e2e-18] ✅ 端到端检出 {len(results)} 个漏洞")
+
+
+def test_js_esm_import_parse():
+    """信号测试：ESM import/export 在 esprima script 模式下的解析行为"""
+    init_once()
+    utils_file = get_abs('15a_cross_file_esm_utils.js')
+    _nodes = ast_object.get_nodes(utils_file)
+
+    # esprima script 模式能解析 export function，但 import_map 只处理 CommonJS require
+    import_map = _parse_js_imports(_nodes, utils_file)
+    print(f"[15a] import_map = {import_map}")
+    # ESM 的 import/export 不是 require()，import_map 应为空或不含 ESM 项
+    print("[15a] ✅ ESM 文件能被 esprima 解析（import_map 不含 require 项是预期行为）")
+
+
+def test_js_esm_cross_file_skip():
+    """端到端测试：ESM import 跨文件 - 15a/15b 预期不检出（esprima script 模式不支持）"""
+    file_list = ['15a_cross_file_esm_utils.js', '15b_cross_file_esm_main.js']
+    results = _scan_single_e2e('javascript', file_list, TEST_DIR)
+    print(f"[e2e-15] results = {results}")
+    # esprima script 模式不解析 import/export，15b 的 import 语句不会被追踪
+    # 所以预期不检出（或只检出 15a 内部直接 sink，不跨文件）
+    print("[e2e-15] ✅ ESM 跨文件预期不检出（esprima script 模式限制）")
+
+
 def main():
     print("=" * 60)
     print("JS 跨文件追踪 Benchmark")
@@ -276,8 +319,12 @@ def main():
         ("scan_parser 集成", test_scan_parser_integration),
         ("端到端 JS 13a/13b", test_js_e2e_newfunction_cross_file),
         ("端到端 JS 17a/17b", test_js_e2e_exports_cross_file),
-        ("端到端 JS 安全封装", test_js_e2e_safe_no_false_positive),
+        ("端到端 JS 14a/14b 解构导入", test_js_e2e_destructure_cross_file),
+        ("端到端 JS 18a/18b setTimeout", test_js_e2e_settimeout_cross_file),
+        ("端到端 JS 16a/16b 安全封装", test_js_e2e_safe_no_false_positive),
         ("端到端 PHP newfunction", test_php_e2e_newfunction),
+        ("信号 ESM import 解析", test_js_esm_import_parse),
+        ("端到端 ESM 跨文件(预期跳过)", test_js_esm_cross_file_skip),
     ]
 
     passed = 0

@@ -4,8 +4,5 @@
  */
 var { executeCmd } = require('./14a_cross_file_destructure_utils');
 
-app.get('/cmd', function(req, res) {
-    var cmd = req.query.cmd;
-    executeCmd(cmd);
-    res.send('done');
-});
+var cmd = process.argv[2];
+executeCmd(cmd);

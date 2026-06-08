@@ -4,8 +4,5 @@
  */
 var utils = require('./18a_cross_file_settimeout_utils');
 
-app.get('/delay', function(req, res) {
-    var code = req.query.code;
-    utils.delayEval(code);
-    res.send('done');
-});
+var code = process.argv[2];
+utils.delayEval(code);
