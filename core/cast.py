@@ -32,7 +32,11 @@ class CAST(object):
                  'sol': "sol",
                  'js': "javascript",
                  'py': "python",
-                 'go': "go"}
+                 'go': "go",
+                 'c': "c",
+                 'cpp': "c",
+                 'cc': "c",
+                 'h': "c"}
 
     def __init__(self, rule, target_directory, file_path, line, code, files=None, rule_class=None, repair_functions=[], controlled_params=[]):
         self.target_directory = target_directory
@@ -96,6 +100,13 @@ class CAST(object):
                 'string': r"""(?:['\"])(.*)(?:['\"])""",
                 'assign_string': r'({0}\s*=\s?[\'\"](.*)[\'\"])',
                 'annotation': r'(#|\\\*|//|\*)+',
+            },
+            'c': {
+                'functions': r'(?:[\w\s\*]+)\s+(\w+)\s*\([^)]*\)\s*\{',
+                'string': r'"([^"]*)"',
+                'assign_string': r'({0}\s*=\s*"([^"]*)")',
+                'annotation': r'(//|/\*|\*)+',
+                'variable': r'(\w+)',
             }
         }
         logger.debug("[AST] [LANGUAGE] {language}".format(language=self.language))
