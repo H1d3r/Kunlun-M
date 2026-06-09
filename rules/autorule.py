@@ -55,6 +55,18 @@ class autorule:
                 reg = r"(?:\A|\s|\b)(\w+\s*(?==))|((?<=\(|,)[^\(\)|,|'|\"]+)"
             else:
                 reg = r"(?<=\(|,|=)[^\(\)|,|'|\"]+"
+        elif self.language.lower() == 'python':
+            # Python: 从 process_command(user_input) 中提取 user_input
+            if self.is_eval_object:
+                reg = r"(?:\A|\s|\b)(\w+\s*(?==))|((?<=\(|,|=)[^\(\)|,|'|\"]+)"
+            else:
+                reg = r"(?<=\(|,|=)[^\(\)|,|'|\"]+"
+        elif self.language.lower() == 'go':
+            reg = r"(?<=\(|,|=)[^\(\)|,|'|\`]+"
+        elif self.language.lower() in ('c', 'c++', 'cpp'):
+            reg = r"(?<=\(|,|=)[^\(\)|,|'\"]+"
+        elif self.language.lower() == 'java':
+            reg = r"(?<=\(|,|=)[^\(\)|,|'|\"]+"
         else:
             return None
         if re.search(reg, sql_sen, re.I):

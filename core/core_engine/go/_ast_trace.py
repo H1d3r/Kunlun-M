@@ -532,7 +532,7 @@ def _get_go_literal_value(node):
 
 def trace_go_expr(var_name, expr_node, file_path, lineno, to_line,
                   repair_functions, controlled_params, depth, max_depth,
-                  function_back_go_fn, trace_variable_fn):
+                  trace_variable_fn):
     """
     追踪 Go 表达式节点的来源（纯 AST 版本）
 
@@ -568,7 +568,7 @@ def trace_go_expr(var_name, expr_node, file_path, lineno, to_line,
         return _trace_call_expr(
             var_name, expr_node, file_path, lineno, to_line,
             repair_functions, controlled_params, depth, max_depth,
-            function_back_go_fn, trace_variable_fn
+            trace_variable_fn
         )
 
     # 5. 字符串拼接 (binary_expression with +)
@@ -576,7 +576,7 @@ def trace_go_expr(var_name, expr_node, file_path, lineno, to_line,
         return _trace_binary_expr(
             var_name, expr_node, file_path, lineno, to_line,
             repair_functions, controlled_params, depth, max_depth,
-            function_back_go_fn, trace_variable_fn
+            trace_variable_fn
         )
 
     # 6. 简单变量
@@ -615,7 +615,7 @@ def trace_go_expr(var_name, expr_node, file_path, lineno, to_line,
             return trace_go_expr(
                 var_name, base, file_path, lineno, to_line,
                 repair_functions, controlled_params, depth, max_depth,
-                function_back_go_fn, trace_variable_fn
+                trace_variable_fn
             )
 
     # 9. type_conversion_expression (如 string(body))
@@ -625,7 +625,7 @@ def trace_go_expr(var_name, expr_node, file_path, lineno, to_line,
                 result = trace_go_expr(
                     var_name, child, file_path, lineno, to_line,
                     repair_functions, controlled_params, depth, max_depth,
-                    function_back_go_fn, trace_variable_fn
+                    trace_variable_fn
                 )
                 if result[0] in (1, 2):
                     return result
@@ -637,7 +637,7 @@ def trace_go_expr(var_name, expr_node, file_path, lineno, to_line,
                 result = trace_go_expr(
                     var_name, child, file_path, lineno, to_line,
                     repair_functions, controlled_params, depth, max_depth,
-                    function_back_go_fn, trace_variable_fn
+                    trace_variable_fn
                 )
                 if result[0] in (1, 2):
                     return result
@@ -649,7 +649,7 @@ def trace_go_expr(var_name, expr_node, file_path, lineno, to_line,
                 return trace_go_expr(
                     var_name, child, file_path, lineno, to_line,
                     repair_functions, controlled_params, depth, max_depth,
-                    function_back_go_fn, trace_variable_fn
+                    trace_variable_fn
                 )
 
     # 12. fallback: 收集标识符逐一追踪
@@ -671,7 +671,7 @@ def trace_go_expr(var_name, expr_node, file_path, lineno, to_line,
 
 def _trace_call_expr(var_name, call_node, file_path, lineno, to_line,
                      repair_functions, controlled_params, depth, max_depth,
-                     function_back_go_fn, trace_variable_fn):
+                     trace_variable_fn):
     """追踪函数调用表达式，返回 (code, source_lineno)"""
     func_name = _get_call_func_name(call_node)
     args = _get_call_args(call_node)
@@ -695,43 +695,21 @@ def _trace_call_expr(var_name, call_node, file_path, lineno, to_line,
                 result = trace_go_expr(
                     var_name, arg_node, file_path, lineno, to_line,
                     repair_functions, controlled_params, depth + 1, max_depth,
-                    function_back_go_fn, trace_variable_fn
+                    trace_variable_fn
                 )
                 if result[0] in (1, 2):
                     return result
             return (-1, 0)  # 所有参数都安全
 
-    # 未知函数 → 跨函数追踪 (deps 机制)
+    # 未知函数 → NewCore
     args_str = ', '.join(_get_node_text(a) for a in args)
-    fb_result = function_back_go_fn(
-        func_name, args_str, lineno, file_path,
-        repair_functions, controlled_params
-    )
-
-    if isinstance(fb_result, tuple) and len(fb_result) == 2:
-        code, caller_deps = fb_result
-        if code == 'deps' and caller_deps:
-            for dep_var in caller_deps:
-                if dep_var == var_name:
-                    continue
-                result = trace_variable_fn(
-                    file_path, dep_var, lineno, to_line,
-                    repair_functions, controlled_params, depth + 1, max_depth
-                )
-                if result[0] in (1, 2):
-                    return result
-            return (3, lineno)  # 所有依赖都未确认
-        elif code in (1, 2):
-            return (code, lineno)
-        elif code == 3:
-            return (3, lineno)
-
-    return (-1, 0)
+    logger.debug("[AST][Go] [ast_trace] Unknown function {} → NewCore".format(func_name))
+    return (5, func_name)
 
 
 def _trace_binary_expr(var_name, bin_node, file_path, lineno, to_line,
                        repair_functions, controlled_params, depth, max_depth,
-                       function_back_go_fn, trace_variable_fn):
+                       trace_variable_fn):
     """追踪二元表达式（字符串拼接），返回 (code, source_lineno)"""
     for child in bin_node.children:
         if child.type in ('+', '-', '||', '&&', '==', '!=', '<', '>', '<=', '>='):
@@ -742,7 +720,7 @@ def _trace_binary_expr(var_name, bin_node, file_path, lineno, to_line,
         result = trace_go_expr(
             var_name, child, file_path, lineno, to_line,
             repair_functions, controlled_params, depth, max_depth,
-            function_back_go_fn, trace_variable_fn
+            trace_variable_fn
         )
         if result[0] in (1, 2):
             return result
@@ -775,7 +753,7 @@ def _get_formal_param_names(params_node):
 
 def trace_go_stmt(var_name, stmt_node, file_path, vul_lineno, to_line,
                   repair_functions, controlled_params, depth, max_depth,
-                  function_back_go_fn, trace_variable_fn):
+                  trace_variable_fn):
     """
     追踪 Go 语句中的变量赋值（纯 AST 版本）
 
@@ -794,7 +772,7 @@ def trace_go_stmt(var_name, stmt_node, file_path, vul_lineno, to_line,
             return trace_go_expr(
                 var_name, rhs_node, file_path, lineno, to_line,
                 repair_functions, controlled_params, depth, max_depth,
-                function_back_go_fn, trace_variable_fn
+                trace_variable_fn
             )
     
     # if 语句
@@ -825,7 +803,7 @@ def trace_go_stmt(var_name, stmt_node, file_path, vul_lineno, to_line,
                         rhs_node, lineno = result
                         return trace_go_expr(var_name, rhs_node, file_path, lineno, to_line,
                                              repair_functions, controlled_params, depth, max_depth,
-                                             function_back_go_fn, trace_variable_fn)
+                                             trace_variable_fn)
                     break
 
         elif sink_branch == 'else':
@@ -847,11 +825,11 @@ def trace_go_stmt(var_name, stmt_node, file_path, vul_lineno, to_line,
                             rhs_node, lineno = result
                             return trace_go_expr(var_name, rhs_node, file_path, lineno, to_line,
                                                  repair_functions, controlled_params, depth, max_depth,
-                                                 function_back_go_fn, trace_variable_fn)
+                                                 trace_variable_fn)
                     elif child.type == 'if_statement':
                         return trace_go_stmt(var_name, child, file_path, vul_lineno, to_line,
                                             repair_functions, controlled_params, depth, max_depth,
-                                            function_back_go_fn, trace_variable_fn)
+                                            trace_variable_fn)
                     break
 
         else:
@@ -863,11 +841,11 @@ def trace_go_stmt(var_name, stmt_node, file_path, vul_lineno, to_line,
                         rhs_node, lineno = result
                         return trace_go_expr(var_name, rhs_node, file_path, lineno, to_line,
                                              repair_functions, controlled_params, depth, max_depth,
-                                             function_back_go_fn, trace_variable_fn)
+                                             trace_variable_fn)
                 elif child.type == 'if_statement':
                     return trace_go_stmt(var_name, child, file_path, vul_lineno, to_line,
                                         repair_functions, controlled_params, depth, max_depth,
-                                        function_back_go_fn, trace_variable_fn)
+                                        trace_variable_fn)
 
     # for 语句
     elif stmt_node.type == 'for_statement':
@@ -906,7 +884,7 @@ def trace_go_stmt(var_name, stmt_node, file_path, vul_lineno, to_line,
                     return trace_go_expr(
                         var_name, rhs_node, file_path, lineno, to_line,
                         repair_functions, controlled_params, depth, max_depth,
-                        function_back_go_fn, trace_variable_fn
+                        trace_variable_fn
                     )
             elif child.type == 'range_clause':
                 # for i, v := range expr
@@ -916,7 +894,7 @@ def trace_go_stmt(var_name, stmt_node, file_path, vul_lineno, to_line,
                     return trace_go_expr(
                         var_name, rhs_node, file_path, lineno, to_line,
                         repair_functions, controlled_params, depth, max_depth,
-                        function_back_go_fn, trace_variable_fn
+                        trace_variable_fn
                     )
 
     # switch 语句 (expression_switch_statement)
@@ -949,7 +927,7 @@ def trace_go_stmt(var_name, stmt_node, file_path, vul_lineno, to_line,
             return trace_go_expr(
                 var_name, rhs_node, file_path, lineno, to_line,
                 repair_functions, controlled_params, depth, max_depth,
-                function_back_go_fn, trace_variable_fn
+                trace_variable_fn
             )
     
     # expression_statement (可能包含赋值)
@@ -959,7 +937,7 @@ def trace_go_stmt(var_name, stmt_node, file_path, vul_lineno, to_line,
                 return trace_go_stmt(
                     var_name, child, file_path, vul_lineno, to_line,
                     repair_functions, controlled_params, depth, max_depth,
-                    function_back_go_fn, trace_variable_fn
+                    trace_variable_fn
                 )
     
     return None  # 未找到赋值

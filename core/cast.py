@@ -32,7 +32,11 @@ class CAST(object):
                  'sol': "sol",
                  'js': "javascript",
                  'py': "python",
-                 'go': "go"}
+                 'go': "go",
+                 'c': "c",
+                 'cpp': "c",
+                 'cc': "c",
+                 'h': "c"}
 
     def __init__(self, rule, target_directory, file_path, line, code, files=None, rule_class=None, repair_functions=[], controlled_params=[]):
         self.target_directory = target_directory
@@ -88,8 +92,21 @@ class CAST(object):
             'go': {
                 'functions': r'func\s+(?:\(\w+\s+\*?\w+\)\s+)?(\w+)\s*\(',
                 'string': r'"([^"]*)"',
-                'assign_string': r'({0}\s*:?=\s*(.+))',
+                'assign_string': r'({0}\s*:?=\\s*(.+))',
                 'annotation': r'(//|/\*|\*)+',
+            },
+            'python': {
+                'functions': r'(?:def\s+)(\w+)\s*\(',
+                'string': r"""(?:['\"])(.*)(?:['\"])""",
+                'assign_string': r'({0}\s*=\s?[\'\"](.*)[\'\"])',
+                'annotation': r'(#|\\\*|//|\*)+',
+            },
+            'c': {
+                'functions': r'(?:[\w\s\*]+)\s+(\w+)\s*\([^)]*\)\s*\{',
+                'string': r'"([^"]*)"',
+                'assign_string': r'({0}\s*=\s*"([^"]*)")',
+                'annotation': r'(//|/\*|\*)+',
+                'variable': r'(\w+)',
             }
         }
         logger.debug("[AST] [LANGUAGE] {language}".format(language=self.language))
@@ -287,7 +304,7 @@ class CAST(object):
                     get_param = re.findall(regex_get_param, param_block_code)
                     if len(get_param) >= 1 and get_param[0] != '':
                         logger.debug("[AST] Is assign out data: `Yes`")
-                        continue
+                        return True, 1, self.data, []
                         # False, self.data
                     logger.debug("[AST] Is assign out data: `No`")
                     return True, -1, self.data, []
@@ -354,7 +371,7 @@ class CAST(object):
                         return True, _is_co, _cp, chain
                     elif _is_co == 3:
                         pass
-                    elif _is_co == 4:
+                    elif _is_co in (4, 5):
                         if hasattr(_cp[0], "name"):
                             logger.info("[AST] New vul function {}()".format(_cp[0].name))
                         else:
@@ -376,7 +393,7 @@ class CAST(object):
                         return True, _is_co, _cp, chain
                     elif _is_co == 3:
                         pass
-                    elif _is_co == 4:
+                    elif _is_co in (4, 5):
                         if hasattr(_cp[0], "name"):
                             logger.info("[AST] New vul function {}()".format(_cp[0].name))
                         else:
@@ -397,9 +414,15 @@ class CAST(object):
                 logger.warning("[AST] Can't get `param`, check built-in rule..error details:\n{}".format(traceback.format_exc()))
                 return False, -1, self.data, []
 
+        # 循环结束后处理 _is_co == 3 的情况（Python/JS/Go/C 的 pass 逻辑）
+        try:
+            _is_co
+        except NameError:
+            return False, self.data, None, None
+
         if _is_co == 3:
-            logger.info("[AST] can't find this param, Unconfirmed vulnerable..")
-            return True, _is_co, _cp, chain
+                logger.info("[AST] can't find this param, Unconfirmed vulnerable..")
+                return True, _is_co, _cp, chain
 
         # if no variable can modify
         return False, self.data, None, None
