@@ -1,27 +1,50 @@
 {
   "meta": {
-    "target": "/home/ubuntu/.hermes/hermes-agent/Kunlun-M/tests/php",
-    "task_id": 1,
-    "project_id": 1,
-    "started_at": "2026-06-10T02:48:08.711045+00:00",
-    "finished_at": "2026-06-10T02:48:09.054911+00:00",
-    "fail_on": "1",
+    "target": "/home/ubuntu/.hermes/hermes-agent/Kunlun-M/tests/python",
+    "task_id": 4,
+    "project_id": 4,
+    "started_at": "2026-06-10T03:28:30.188239+00:00",
+    "finished_at": "2026-06-10T03:28:30.513931+00:00",
+    "fail_on": "none",
     "include_unconfirm": false,
     "with_vendor": false,
     "settings_module": "Kunlun_M.settings_ci",
     "mode": "threshold"
   },
   "summary": {
-    "total": 0,
+    "total": 2,
     "by_severity": {
       "critical": 0,
-      "high": 0,
+      "high": 2,
       "medium": 0,
       "low": 0
     },
-    "max_severity": "none"
+    "max_severity": "high"
   },
-  "vulnerabilities": [],
+  "vulnerabilities": [
+    {
+      "id": 7,
+      "cvi_id": "7000",
+      "rule_name": "命令注入",
+      "severity": "high",
+      "language": "python",
+      "file": "13b_cross_file_eval_main.py:18",
+      "is_unconfirm": false,
+      "result_type": "Vustomize-Match",
+      "source_code": "process_command(user_input)"
+    },
+    {
+      "id": 8,
+      "cvi_id": "7000",
+      "rule_name": "命令注入",
+      "severity": "high",
+      "language": "python",
+      "file": "30_indirect_exec.py:13",
+      "is_unconfirm": false,
+      "result_type": "Arbitrary-function-call",
+      "source_code": "func()"
+    }
+  ],
   "exit": {
     "code": 0,
     "reason": "ok"

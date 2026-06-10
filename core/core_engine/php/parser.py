@@ -3446,6 +3446,14 @@ def _match_call_node(node, sink_names):
             if isinstance(param_expr, php.Variable):
                 is_indirect = True
                 callback_callee = param_expr
+            elif isinstance(param_expr, str):
+                # 字符串字面量回调: call_user_func('system', $cmd)
+                # 标记为间接调用，callback_callee 记录字符串值
+                # scanner.py 会用 callback_callee 构造 indirect_map
+                callback_func_name = param_expr.strip("'\"")
+                if callback_func_name and any(s.method == callback_func_name for s in sink_names):
+                    is_indirect = True
+                    callback_callee = callback_func_name  # 字符串值（如 'system'）
 
     # 匹配 sink_names
     for sink in sink_names:
@@ -3519,6 +3527,9 @@ def _handle_indirect_call(all_nodes, vul_lineno, indirect_map, repair_functions,
             var_name = node.name.name  # e.g. '$func'
             if var_name in indirect_map:
                 target_node = node
+        elif isinstance(node.name, str) and node.name in indirect_map:
+            # 字符串 callee 间接调用: call_user_func('system', $cmd)
+            target_node = node
 
     for top_node in all_nodes:
         _walk_php_ast_nodes(top_node, _find_at_line)
