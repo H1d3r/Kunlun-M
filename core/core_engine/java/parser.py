@@ -2083,6 +2083,20 @@ def find_sinks(sink_names, files):
         if not _nodes:
             continue
 
+        # === 第一遍遍历：收集方法引用赋值映射（间接调用） ===
+        assignment_map = {}  # 变量名 -> 原始方法名
+        try:
+            for mref_path, mref_node in _nodes.filter(javalang.tree.MethodReference):
+                method_name = mref_node.method.member if hasattr(mref_node.method, 'member') else str(mref_node.method)
+                # 查找赋值目标：MethodReference 所在的局部变量声明
+                if len(mref_path) >= 2:
+                    parent = mref_path[-2]
+                    if isinstance(parent, javalang.tree.LocalVariableDeclaration):
+                        var_name = parent.declarators[0].name
+                        assignment_map[var_name] = method_name
+        except Exception:
+            pass
+
         # 使用 javalang 的 filter 遍历 MethodInvocation
         try:
             for path, node in _nodes.filter(javalang.tree.MethodInvocation):
@@ -2153,6 +2167,29 @@ def find_sinks(sink_names, files):
                                 'matched_sink': sink,
                             })
                             break
+
+            # === 间接调用匹配：检查 qualifier 是否是赋值了方法引用的变量 ===
+            try:
+                for path, node in _nodes.filter(javalang.tree.MethodInvocation):
+                    qualifier = node.qualifier or ''
+                    # qualifier 可能是 MemberReference 对象（变量引用），不是字符串
+                    if hasattr(qualifier, 'member') and qualifier.member in assignment_map:
+                        real_method = assignment_map[qualifier.member]
+                        for sink in sink_names:
+                            if real_method == sink.method:
+                                lineno = node.position[0] if hasattr(node, 'position') and node.position else 0
+                                results.append({
+                                    'file_path': file_path,
+                                    'lineno': lineno,
+                                    'node': node,
+                                    'is_indirect': True,
+                                    'callee_name': qualifier.member,
+                                    'class_name': None,
+                                    'matched_sink': sink,
+                                })
+                                break
+            except Exception:
+                pass
         except Exception:
             continue
 
