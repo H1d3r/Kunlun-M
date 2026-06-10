@@ -1713,11 +1713,30 @@ def _handle_call_expression_rhs(call_node, var_name, file_path, lineno, to_line,
         logger.debug("[AST][C] RHS call {} is controlled source".format(func_text))
         return (1, lineno)
 
-    # 未知函数 → 返回 code=5，交给 NewCore 二次扫描
-    logger.debug("[AST][C] RHS call {} is unknown, return code=5".format(func_text))
-    return (5, func_text)
+    # 查函数摘要
+    callee_summary = lookup_summary(func_text)
+    if callee_summary and callee_summary.return_flow:
+        for rf in callee_summary.return_flow:
+            if rf.origin_type == "param":
+                for param_idx in rf.dep_params:
+                    if param_idx < len(args):
+                        arg_node = args[param_idx]
+                        var_names = _collect_identifiers_from_ast(arg_node)
+                        for vn in var_names:
+                            if _is_controllable_source(vn, controlled_params):
+                                logger.debug("[AST][C] Summary: {} param {} is controllable".format(func_text, param_idx))
+                                return (1, lineno)
+            elif rf.origin_type == "call":
+                if controlled_params and rf.origin in controlled_params:
+                    logger.debug("[AST][C] Summary: {} call origin {} is controllable".format(func_text, rf.origin))
+                    return (1, lineno)
+        # 摘要有 return_flow 但未匹配到可控源 → 不可控
+        logger.debug("[AST][C] Summary: {} has return_flow but no controllable source".format(func_text))
+        return None
 
-    return None
+    # builtin 和 summary 都没有 → 未确认
+    logger.debug("[AST][C] RHS call {} is unknown, return code=3 (unconfirmed)".format(func_text))
+    return (3, func_text)
 
 
 def _handle_binary_expression_rhs(bin_node, var_name, file_path, lineno, to_line,
