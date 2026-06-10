@@ -25,6 +25,7 @@ from core.core_engine.python.parser import find_sinks as python_find_sinks
 from core.core_engine.java.parser import find_sinks as java_find_sinks
 from core.core_engine.javascript.parser import find_sinks as js_find_sinks
 from core.core_engine.go.parser import find_sinks as go_find_sinks
+from core.core_engine.c.parser import find_sinks as c_find_sinks
 from Kunlun_M import const
 from Kunlun_M.const import VulnerabilityResult
 from utils.utils import show_context
@@ -426,6 +427,7 @@ class SingleRule(object):
                                 'java': java_find_sinks,
                                 'javascript': js_find_sinks,
                                 'go': go_find_sinks,
+                                'c': c_find_sinks,
                             }.get(self.lan)
                             if _find_sinks_fn:
                                 indirect_sinks = _find_sinks_fn(sink_names, scan_file_list)
