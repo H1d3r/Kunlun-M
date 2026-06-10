@@ -413,8 +413,15 @@ class SingleRule(object):
             # AST-based sink finding for indirect call detection
             try:
                 if hasattr(self.sr, 'match') and self.sr.match:
-                    from core.utils import parse_sink_names
-                    sink_names = parse_sink_names(self.sr.match)
+                    from core.utils import parse_sink_names, SinkName as _SinkName
+                    # 优先使用 vul_function（干净函数名列表）构建 sink_names
+                    # C/Go 等语言的 match 是正则表达式，parse_sink_names 无法正确解析
+                    if (hasattr(self.sr, 'vul_function') and
+                        isinstance(self.sr.vul_function, list) and
+                        len(self.sr.vul_function) > 0):
+                        sink_names = [_SinkName(class_=None, method=f.strip()) for f in self.sr.vul_function]
+                    else:
+                        sink_names = parse_sink_names(self.sr.match)
                     if sink_names:
                         # self.files 是 dict 格式 {('.php', {'count': N, 'list': [paths]})}
                         # 需要用 file_list_parse 提取实际文件路径列表
