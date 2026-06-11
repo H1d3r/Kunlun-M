@@ -168,11 +168,18 @@ class VulnerabilityMatcher(object):
                 logger.warning('[AST][INIT] tamper_name init error... No module named {}'.format(self.tamper_name))
 
         # 注册到 filter_functions L1（仅首次）
-        from core.filter_functions import stats
+        from core.filter_functions import stats, register_rule_functions
         if not stats().get(self.lan, {}).get("L1_builtin", 0):
             load_builtin(self.lan, self.repair_dict)
 
-        # 兼容：按 svid 过滤生成 repair_functions 列表
+        # L3 注册：规则级自定义修复函数
+        extra_repair = getattr(self.single_rule, 'extra_repair_functions', None)
+        if extra_repair and isinstance(extra_repair, list):
+            register_rule_functions(self.lan, self.single_rule.svid, extra_repair)
+            logger.debug("[FILTER] L3 registered for svid {}: {}".format(
+                self.single_rule.svid, extra_repair))
+
+        # 兼容：按 svid 过滤生成 repair_functions 列表（含 L1+L2+L3）
         # scan_parser 仍通过此列表传递 repair_functions 参数
         self.repair_functions = get_repair_functions(self.lan, self.single_rule.svid)
 
