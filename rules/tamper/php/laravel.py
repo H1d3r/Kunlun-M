@@ -13,10 +13,17 @@ def detect(project_dir, language='php'):
 
 
 FILTER_FUNCTIONS = {
-    'e()': [1000, 10001, 10002],
-    'csrf_field': [],
-    'csrf_token': [],
+    'e()': {'safe_for': [1000, 10001, 10002]},
+    'csrf_field': {'safe_for': []},
+    'csrf_token': {'safe_for': []},
 }
+
+EXTRA_SINKS = [
+    ("DB::raw", [1004]),
+    ("DB::select", [1004]),
+    ("DB::statement", [1004]),
+    ("DB::unprepared", [1004]),
+]
 
 CONTROLLED_SOURCES = [
     'request()->input',

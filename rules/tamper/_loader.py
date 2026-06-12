@@ -294,16 +294,22 @@ def merge_framework_config(repair_dict, controlled_list, framework_module):
     fw_repair = getattr(framework_module, 'FILTER_FUNCTIONS', {})
     if fw_repair:
         for func_name, svids in fw_repair.items():
+            # 兼容两种格式：{func: [svid]} 和 {func: {"safe_for": [svid]}}
+            if isinstance(svids, dict):
+                svid_list = svids.get('safe_for', [])
+            elif isinstance(svids, list):
+                svid_list = svids
+            else:
+                svid_list = []
             if func_name in repair_dict:
-                # Merge svid lists, avoid duplicates
                 existing = repair_dict[func_name]
-                if isinstance(existing, list) and isinstance(svids, list):
-                    merged = list(set(existing + svids))
+                if isinstance(existing, list) and isinstance(svid_list, list):
+                    merged = list(set(existing + svid_list))
                     repair_dict[func_name] = merged
                 else:
-                    repair_dict[func_name] = svids
+                    repair_dict[func_name] = svid_list
             else:
-                repair_dict[func_name] = svids if isinstance(svids, list) else []
+                repair_dict[func_name] = svid_list if isinstance(svid_list, list) else []
 
     # Merge CONTROLLED_SOURCES into controlled_list
     fw_controlled = getattr(framework_module, 'CONTROLLED_SOURCES', [])

@@ -11,7 +11,7 @@ def detect(project_dir, language='php'):
 
 
 FILTER_FUNCTIONS = {
-    'rcube_utils::rep_specialchars_output': [1000, 10001, 10002],
+    'rcube_utils::rep_specialchars_output': {'safe_for': [1000, 10001, 10002]},
 }
 
 CONTROLLED_SOURCES = [
