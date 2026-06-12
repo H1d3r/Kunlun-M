@@ -147,10 +147,10 @@ def score2level(score):
 
 
 def scan_single(target_directory, single_rule, files=None, language=None, tamper_name=None, is_unconfirm=False,
-                newcore_function_list=None, extra_sinks=None):
+                newcore_function_list=None):
     try:
         return SingleRule(target_directory, single_rule, files, language, tamper_name, is_unconfirm,
-                          newcore_function_list, extra_sinks).process()
+                          newcore_function_list).process()
     except Exception:
         raise
 
@@ -162,12 +162,14 @@ def scan(target_directory, a_sid=None, s_sid=None, special_rules=None, language=
     rules = r.rules(special_rules)
     find_vulnerabilities = []
     newcore_function_list = {}
-    extra_sinks = {}
 
-    # 预加载框架 extra_sinks
+    # 预加载框架 extra_sinks 并生成虚拟规则注入 rules 队列
+    virtual_rule_count = 0
     if language and target_directory:
         try:
             from rules.tamper._loader import detect_frameworks, merge_framework_config, load_base_config
+            from utils.api import VirtualRule
+            import types as _types
             # language may be a list (e.g. ['php', 'javascript'])
             languages = language if isinstance(language, list) else [language]
             for lang in languages:
@@ -179,11 +181,32 @@ def scan(target_directory, a_sid=None, s_sid=None, special_rules=None, language=
                         extra = merge_framework_config(repair_tmp, controlled_tmp, fw_mod)
                         if extra:
                             for pattern, svids in extra.items():
-                                if pattern not in extra_sinks:
-                                    extra_sinks[pattern] = set()
-                                extra_sinks[pattern] |= svids
+                                for svid in svids:
+                                    # 从已有规则获取漏洞描述
+                                    vuln_desc = ""
+                                    for rule_key in rules:
+                                        try:
+                                            r = getattr(rules[rule_key], rule_key)
+                                            rc = r()
+                                            if rc.svid == svid:
+                                                vuln_desc = rc.vulnerability
+                                                break
+                                        except:
+                                            pass
+
+                                    # 生成虚拟规则类（包装为假模块以兼容 getattr 结构）
+                                    vw_name = "VW_{}_{}".format(svid, virtual_rule_count)
+                                    vw_class = type(vw_name, (VirtualRule,), {
+                                        '__init__': lambda self, _p=pattern, _s=svid, _l=lang_lower, _d=vuln_desc: VirtualRule.__init__(self, _p, _s, _l, _d)
+                                    })
+                                    vw_module = _types.ModuleType(vw_name)
+                                    setattr(vw_module, vw_name, vw_class)
+                                    rules[vw_name] = vw_module
+                                    virtual_rule_count += 1
+                                    logger.info('[CVI-{cvi}] [VIRTUAL] EXTRA_SINK: {p} (framework: {fw})'.format(
+                                        cvi=svid, p=pattern, fw=getattr(fw_mod, 'FRAMEWORK_NAME', '?')))
         except Exception as e:
-            logger.debug('[SCAN] extra_sinks pre-load error: {e}'.format(e=e))
+            logger.debug('[SCAN] extra_sinks virtual-rule generation error: {e}'.format(e=e))
 
     def store(result):
         if result is not None and isinstance(result, list) is True:
@@ -194,13 +217,15 @@ def scan(target_directory, a_sid=None, s_sid=None, special_rules=None, language=
             logger.debug('[SCAN] [STORE] Not found vulnerabilities on this rule!')
 
     async def start_scan(target_directory, rule, files, language, tamper_name):
-        result = scan_single(target_directory, rule, files, language, tamper_name, is_unconfirm, newcore_function_list, extra_sinks)
+        result = scan_single(target_directory, rule, files, language, tamper_name, is_unconfirm, newcore_function_list)
         store(result)
 
     if len(rules) == 0:
         logger.critical('no rules!')
         return False
     logger.info('[PUSH] {rc} Rules'.format(rc=len(rules)))
+    if virtual_rule_count > 0:
+        logger.info('[PUSH] {n} Virtual Rules from EXTRA_SINKS'.format(n=virtual_rule_count))
     push_rules = []
     scan_list = []
 
@@ -291,7 +316,7 @@ def scan(target_directory, a_sid=None, s_sid=None, special_rules=None, language=
 
 class SingleRule(object):
     def __init__(self, target_directory, single_rule, files, language=None, tamper_name=None, is_unconfirm=False,
-                 newcore_function_list=None, extra_sinks=None):
+                 newcore_function_list=None):
         self.target_directory = target_directory
         self.sr = single_rule
         self.files = files
@@ -309,9 +334,6 @@ class SingleRule(object):
 
         # new core function list
         self.newcore_function_list = newcore_function_list or {}
-
-        # 框架特有 sink 的额外 grep 模式
-        self.extra_sinks = extra_sinks or {}
 
         logger.info("[!] Start scan [CVI-{sr_id}]".format(sr_id=self.sr.svid))
 
@@ -434,35 +456,6 @@ class SingleRule(object):
                 logger.debug('match exception ({e})'.format(e=e))
                 logger.debug(traceback.format_exc())
                 return None
-
-            # EXTRA_SINKS: 框架特有 sink 的额外 grep
-            if self.extra_sinks:
-                current_svid = self.sr.svid
-                for pattern, svids in self.extra_sinks.items():
-                    if current_svid in svids:
-                        try:
-                            extra_result = f.grep(pattern)
-                            if extra_result:
-                                if result is None:
-                                    result = []
-                                if isinstance(extra_result, list):
-                                    # 去重
-                                    existing_set = set(tuple(x) if isinstance(x, tuple) else x for x in result)
-                                    for item in extra_result:
-                                        key = tuple(item) if isinstance(item, tuple) else item
-                                        if key not in existing_set:
-                                            result.append(item)
-                                            existing_set.add(key)
-                                else:
-                                    try:
-                                        extra_decoded = extra_result.decode('utf-8')
-                                        result.extend(extra_decoded)
-                                    except (AttributeError, UnicodeDecodeError):
-                                        pass
-                                logger.debug('[CVI-{cvi}] [EXTRA_SINK] matched: {p}'.format(
-                                    cvi=current_svid, p=pattern))
-                        except Exception as e:
-                            logger.debug('extra_sinks grep exception ({e})'.format(e=e))
 
             # AST-based sink finding for indirect call detection
             try:

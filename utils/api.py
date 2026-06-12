@@ -71,7 +71,23 @@ class SingleRuleMixin:
     exclude_patterns = None
 
 
+class VirtualRule(SingleRuleMixin):
+    """
+    EXTRA_SINKS 动态生成的虚拟规则。
+    match_mode = function-param-regex，走 grep → AST → CAST 完整链路。
+    """
+    def __init__(self, pattern, svid, language, vulnerability_desc=""):
+        self.svid = svid
+        self.language = language
+        self.vulnerability = vulnerability_desc or f"Framework sink: {pattern}"
+        self.description = self.vulnerability
+        self.level = 0
+        self.match_mode = "function-param-regex"
+        self.match = pattern
+
+
 __all__ = (
     're', 'os', 'requests', 'logger',
     'SingleRuleMixin',
+    'VirtualRule',
 )
