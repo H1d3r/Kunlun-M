@@ -32,50 +32,8 @@ class CVI_8013(SingleRuleMixin):
         self.vul_function = ["http.Redirect"]
 
     def main(self, regex_string):
-        """
-        二次筛选：检查 http.Redirect 的URL参数（第二个参数）是否为硬编码字符串。
-        如果是相对路径常量（如 "/login"、"/index"）返回 False，
-        如果是变量或外部URL则返回 True。
-        """
         if not isinstance(regex_string, str):
             regex_string = str(regex_string)
-
-        match = re.search(r'http\.Redirect\s*\((.*)\)', regex_string)
-        if not match:
-            return None
-
-        args = match.group(1).strip()
-
-        # 解析参数列表，http.Redirect(w, r, url, code)
-        # 尝试提取第三个参数（URL参数，索引2）
-        # 简单分割参数
-        parts = []
-        depth = 0
-        current = ""
-        for ch in args:
-            if ch == '(':
-                depth += 1
-            elif ch == ')':
-                depth -= 1
-            elif ch == ',' and depth == 0:
-                parts.append(current.strip())
-                current = ""
-                continue
-            current += ch
-        if current.strip():
-            parts.append(current.strip())
-
-        # 第三个参数是URL（索引2）
-        if len(parts) >= 3:
-            url_arg = parts[2].strip()
-
-            # 硬编码字符串字面量（相对路径常量），排除
-            url_str_match = re.match(r'^"([^"]*)"$', url_arg)
-            if url_str_match:
-                return False
-
-        # 确认包含 http.Redirect 调用
         if re.search(r'http\.Redirect\s*\(', regex_string):
             return True
-
         return None

@@ -33,32 +33,11 @@ class CVI_8009(SingleRuleMixin):
 
     def main(self, regex_string):
         """
-        二次筛选：检查匹配到的代码行是否为危险的SQL查询调用，
-        排除参数是硬编码字符串字面量的情况。
+        二次筛选：片段模式下无法判断参数是否拼接。
+        保守策略：匹配到 raw query 函数就检出。
         """
         if not isinstance(regex_string, str):
             regex_string = str(regex_string)
-
-        match = re.search(r'(?:db\.Query|db\.Exec|db\.Raw)\s*\((.*)\)', regex_string)
-        if not match:
-            return None
-
-        args = match.group(1).strip()
-
-        # 纯字符串字面量参数（硬编码SQL），排除
-        # db.Query("SELECT * FROM users WHERE id = ?", 1) 中的SQL模板不算硬编码
-        # 仅当整个参数是单个硬编码字符串时排除，如 db.Exec("CREATE TABLE ...")
-        if re.match(r'^"[^"]*"$', args):
-            return False
-
-        # 确认包含危险的SQL查询调用
-        dangerous_patterns = [
-            r"db\.Query\s*\(",
-            r"db\.Exec\s*\(",
-            r"db\.Raw\s*\(",
-        ]
-        for pat in dangerous_patterns:
-            if re.search(pat, regex_string):
-                return True
-
+        if re.search(r'db\.(Query|Exec|Raw)\s*\(', regex_string):
+            return True
         return None

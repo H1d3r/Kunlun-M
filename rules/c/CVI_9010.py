@@ -71,15 +71,11 @@ class CVI_9010(SingleRuleMixin):
                 return True
             return None
 
-        # exec* 系列 — 第一个参数是路径/命令
-        # execl(path, arg0, arg1, ..., NULL)
-        # execv(path, argv[])
-        cmd_arg = arg_parts[0].strip()
-        # 路径参数是硬编码字符串字面量，排除
-        if re.match(r'^\"[^\"]*\"$', cmd_arg):
-            return False
-
-        return True
+        # exec* 系列函数 — 保守策略
+        # execv/execve/execvp 的第二个参数是 argv 数组，无法从片段判断内容
+        # 只要匹配到就检出
+        if func_name in ("execl", "execle", "execlp", "execv", "execve", "execvp"):
+            return True
 
     def _split_args(self, args_str):
         """简单按逗号分割参数，处理嵌套括号和字符串"""

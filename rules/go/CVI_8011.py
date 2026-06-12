@@ -32,30 +32,8 @@ class CVI_8011(SingleRuleMixin):
         self.vul_function = ["xpath.Query", "xpath.Evaluate"]
 
     def main(self, regex_string):
-        """
-        二次筛选：检查匹配到的代码行是否为危险的XPath调用，
-        排除查询表达式是硬编码字符串字面量的情况。
-        """
         if not isinstance(regex_string, str):
             regex_string = str(regex_string)
-
-        match = re.search(r'(?:xpath\.Query|xpath\.Evaluate)\s*\((.*)\)', regex_string)
-        if not match:
-            return None
-
-        args = match.group(1).strip()
-
-        # 纯字符串字面量参数（硬编码XPath表达式），排除
-        if re.match(r'^"[^"]*"$', args):
-            return False
-
-        # 确认包含危险的XPath调用
-        dangerous_patterns = [
-            r"xpath\.Query\s*\(",
-            r"xpath\.Evaluate\s*\(",
-        ]
-        for pat in dangerous_patterns:
-            if re.search(pat, regex_string):
-                return True
-
+        if re.search(r'xpath\.(Query|Evaluate)', regex_string):
+            return True
         return None
