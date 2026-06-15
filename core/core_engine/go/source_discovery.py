@@ -302,6 +302,38 @@ def _node_contains_source(node, registry, _depth=0):
     return False
 
 
+def _function_returns_source(func_node, registry, _depth=0):
+    """检查 Go 函数定义的 return 语句值是否包含已知 source
+
+    只分析 return_statement 的表达式，不检查函数体内其他位置的 source。
+    """
+    if func_node is None:
+        return False
+
+    def _walk_return(node):
+        """在函数体内查找 return_statement 并检查其表达式"""
+        if node is None:
+            return False
+        if not hasattr(node, 'type'):
+            return False
+        if node.type == 'return_statement':
+            # return 语句的表达式在 expression_list 子节点或子 children 中
+            for child in node.children:
+                if hasattr(child, 'type') and child.type != 'return':
+                    if _node_contains_source(child, registry):
+                        return True
+            return False
+        # 递归进入 block/function body，但不进入嵌套函数
+        if node.type == 'function_declaration':
+            return False
+        for child in node.children:
+            if _walk_return(child):
+                return True
+        return False
+
+    return _walk_return(func_node)
+
+
 def _walk_for_functions(root_node, file_path, registry):
     """遍历 tree-sitter AST 找函数定义，检查函数体是否直接访问已知 source
     
@@ -324,19 +356,21 @@ def _walk_for_functions(root_node, file_path, registry):
             if func_name.startswith('_') or func_name in ('init', 'main'):
                 continue
 
-            # 检查函数体是否包含已知 source
-            if _node_contains_source(child, registry):
-                if func_name not in registry.user_source_functions:
-                    lineno = child.start_point[0] + 1 if hasattr(child, 'start_point') else '?'
-                    source_info = SourceInfo(
-                        source_type='user_defined',
-                        origin='{}:{}'.format(os.path.basename(file_path), lineno),
-                        is_safe=False,
-                        passthrough=True,
-                    )
-                    registry.user_source_functions[func_name] = source_info
-                    logger.debug('[SourceDiscovery][Go] User source producer: {} in {}'.format(
-                        func_name, file_path))
+            # 检查 return 语句的值是否包含已知 source
+            if not _function_returns_source(child, registry):
+                continue
+
+            if func_name not in registry.user_source_functions:
+                lineno = child.start_point[0] + 1 if hasattr(child, 'start_point') else '?'
+                source_info = SourceInfo(
+                    source_type='user_defined',
+                    origin='{}:{}'.format(os.path.basename(file_path), lineno),
+                    is_safe=False,
+                    passthrough=True,
+                )
+                registry.user_source_functions[func_name] = source_info
+                logger.debug('[SourceDiscovery][Go] User source producer: {} in {}'.format(
+                    func_name, file_path))
 
         # 递归进入方法声明（Go 的 method 是 function_declaration 但 receiver 不同）
         # tree-sitter go 中 method_declaration 是 function_declaration 的子类型
