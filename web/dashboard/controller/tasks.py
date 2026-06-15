@@ -286,12 +286,34 @@ class TaskDetailView(View):
         taskresults = get_and_check_scanresult(task.id).objects.filter(scan_project_id=project_id, is_active=1).all()
         newevilfuncs = get_and_check_evil_func(task.id)
 
+        # 加载漏洞链数据
+        chain_map = {}
+        try:
+            from web.index.models import get_resultflow_class
+            RF = get_resultflow_class(task.id)
+            if RF:
+                for rf in RF.objects.all().order_by('id'):
+                    chain_map.setdefault(rf.vul_id, []).append({
+                        'type': rf.node_type,
+                        'content': rf.node_content or '',
+                        'path': rf.node_path or '',
+                        'lineno': str(rf.node_lineno or ''),
+                        'source': rf.node_source or '',
+                    })
+        except Exception:
+            pass
+
         task.is_finished = int(task.is_finished)
         task.parameter_config = del_sensitive_for_config(task.parameter_config)
+
+        # 确定 source_root 用于路径截断
+        source_root = task.source_dir or task.target_path or ''
 
         for taskresult in taskresults:
             taskresult.is_unconfirm = int(taskresult.is_unconfirm)
             taskresult.level = 0
+            taskresult.chain_nodes = chain_map.get(taskresult.id, [])
+            taskresult.has_chain = len(taskresult.chain_nodes) > 0
 
             if taskresult.cvi_id == '9999':
                 vender_vul_id = taskresult.vulfile_path.split(":")[-1]
@@ -319,6 +341,14 @@ class TaskDetailView(View):
                 r = Rules.objects.filter(svid=taskresult.cvi_id).first()
                 taskresult.level = VUL_LEVEL[r.level]
 
+        # 构建 chain JSON 供前端使用
+        chain_json_map = {}
+        for tr in taskresults:
+            if tr.has_chain:
+                chain_json_map[str(tr.id)] = tr.chain_nodes
+        import json as _json
+        chain_json = _json.dumps(chain_json_map, ensure_ascii=False)
+
         if not task:
             return HttpResponseNotFound('Task Not Found.')
         else:
@@ -328,6 +358,8 @@ class TaskDetailView(View):
                 'newevilfuncs': newevilfuncs,
                 'visit_token': visit_token,
                 'project': project,
+                'source_root': source_root,
+                'chain_json': chain_json,
             }
             return render(request, 'dashboard/tasks/task_detail.html', data)
 

@@ -215,8 +215,11 @@
                       <span class="label label-success">{{ taskresult.is_unconfirm }}</span>
                       {% endif %}
                     </td>
-                    <td class="km-td-actions">
+                    <td class="km-col-actions">
                       <div class="km-actions">
+                        {% if taskresult.has_chain %}
+                        <button type="button" class="btn btn-xs btn-chain" data-vul-id="{{ taskresult.id }}" onclick="toggleChainPanel(this)" title="查看传播链"><i class="fa fa-sitemap"></i></button>
+                        {% endif %}
                         <button type="button" class="btn btn-danger btn-xs" onclick="delVul('{{ taskresult.id }}')">删除</button>
                       </div>
                     </td>
@@ -224,6 +227,12 @@
                   {% endfor %}
                 </tbody>
               </table>
+    </div>
+
+    <!-- 漏洞链面板 -->
+    <div id="chainPanel" class="km-chain-panel" style="display:none">
+      <div class="km-chain-sidebar" id="chainSidebar"></div>
+      <div class="km-chain-code" id="chainCode"></div>
     </div>
 
     {% csrf_token %}
@@ -279,6 +288,13 @@
 {% endblock %}
 
 {% block script %}
+
+<link rel="stylesheet" href="{% static 'css/chain-panel.css' %}">
+<script src="{% static 'js/chain-panel.js' %}"></script>
+<script>
+// 注入漏洞链数据（Django 后端渲染）
+var chainDataMap = {{ chain_json|safe }};
+</script>
 
 <script>
 function delVul(vulid){
