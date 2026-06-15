@@ -126,12 +126,31 @@
 
 <div class="box box-warning">
 <div class="box-header with-border">
-  <h3 class="box-title">结果</h3>
+  <h3 class="box-title">结果 {% if taskresults %}<span class="badge bg-yellow">{{ taskresults|length }}</span>{% endif %}</h3>
+  <div class="box-tools pull-right">
+    <div class="input-group input-group-sm" style="width:250px;">
+      <input type="text" id="resultFilter" class="form-control pull-right" placeholder="搜索 CVI / 文件 / 代码...">
+      <div class="input-group-btn">
+        <button type="button" class="btn btn-default"><i class="fa fa-search"></i></button>
+      </div>
+    </div>
+  </div>
 </div>
 <!-- /.box-header -->
 <div class="box-body">
+    <!-- 筛选条 -->
+    <div style="margin-bottom:12px;" id="filterBar">
+      <button class="btn btn-xs btn-default filter-btn active" data-filter="all">全部</button>
+      <button class="btn btn-xs btn-danger filter-btn" data-filter="high">高危</button>
+      <button class="btn btn-xs btn-warning filter-btn" data-filter="medium">中危</button>
+      <button class="btn btn-xs btn-info filter-btn" data-filter="low">低危</button>
+      <span style="margin-left:16px;">
+        <button class="btn btn-xs btn-default filter-btn" data-filter="confirmed">已确认</button>
+        <button class="btn btn-xs btn-default filter-btn" data-filter="unconfirmed">未确认</button>
+      </span>
+    </div>
     <div class="box-body table-responsive no-padding">
-              <table class="table table-hover km-table km-table-wide">
+              <table class="table table-hover km-table km-table-wide" id="resultTable">
                 <thead>
                   <tr>
                     <th class="km-col-id">ID</th>
@@ -147,7 +166,7 @@
                 </thead>
                 <tbody>
                   {% for taskresult in taskresults %}
-                  <tr>
+                  <tr data-level="{{ taskresult.level|lower }}" data-confirm="{% if taskresult.is_unconfirm == 0 %}confirmed{% else %}unconfirmed{% endif %}">
                     <td class="km-td-nowrap">{{ taskresult.id }}</td>
                     <td class="km-td-nowrap">{{ taskresult.cvi_id }}</td>
                     <td class="km-td-nowrap">{{ taskresult.language }}</td>
@@ -173,7 +192,17 @@
                       <td><div class="km-cell-config" title="{{ taskresult.source_code|escape }}">{{ taskresult.source_code }}</div></td>
                     {% endif %}
 
-                    <td class="km-td-nowrap">{{ taskresult.level }}</td>
+                    <td class="km-td-nowrap">
+                      {% if taskresult.level == 'high' or taskresult.level == 'High' %}
+                      <span class="label label-danger">高危</span>
+                      {% elif taskresult.level == 'medium' or taskresult.level == 'Medium' %}
+                      <span class="label label-warning">中危</span>
+                      {% elif taskresult.level == 'low' or taskresult.level == 'Low' %}
+                      <span class="label label-info">低危</span>
+                      {% else %}
+                      {{ taskresult.level }}
+                      {% endif %}
+                    </td>
                     <td class="km-td-nowrap">{{ taskresult.result_type }}</td>
 
                     <td class="km-td-nowrap">
@@ -328,6 +357,37 @@ $(document).ready(function(){
       if(data.code==200){ alert("任务已重新提交"); location.reload(); }
       else alert(data.message || "操作失败");
     });
+  });
+
+  // 结果筛选
+  var currentFilter = 'all';
+  var currentSearch = '';
+  function applyFilters(){
+    var $rows = $("#resultTable tbody tr");
+    var visible = 0;
+    $rows.each(function(){
+      var $r = $(this);
+      var text = $r.text().toLowerCase();
+      var matchSearch = !currentSearch || text.indexOf(currentSearch) >= 0;
+      var matchLevel = currentFilter === 'all' ||
+        (currentFilter === 'confirmed' && $r.data('confirm') === 'confirmed') ||
+        (currentFilter === 'unconfirmed' && $r.data('confirm') === 'unconfirmed') ||
+        $r.data('level') === currentFilter;
+      $r.toggle(matchSearch && matchLevel);
+      if(matchSearch && matchLevel) visible++;
+    });
+  }
+  $("#filterBar").on("click", ".filter-btn", function(){
+    $(".filter-btn").removeClass("active btn-danger btn-warning btn-info").addClass("btn-default");
+    var f = $(this).data('filter');
+    currentFilter = f;
+    var cls = {'high':'btn-danger','medium':'btn-warning','low':'btn-info'};
+    $(this).removeClass('btn-default').addClass(cls[f] || 'active');
+    applyFilters();
+  });
+  $("#resultFilter").on("input", function(){
+    currentSearch = $(this).val().toLowerCase().trim();
+    applyFilters();
   });
 
 });
