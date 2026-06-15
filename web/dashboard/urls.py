@@ -51,6 +51,8 @@ urlpatterns = [
 
     # user
     path("userinfo", views.userinfo, name="userinfo"),
+    path('user/token/create', views.userinfo_token_create, name='userinfo_token_create'),
+    path('user/token/delete/<int:token_id>', views.userinfo_token_delete, name='userinfo_token_delete'),
     path("overview", views.overview, name="overview"),
 
     # interface

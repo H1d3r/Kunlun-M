@@ -2,49 +2,93 @@
 {% block title %}个人信息{% endblock %}
 
 {% block body %}
-
- <div class="box box-warning">
-    <div class="box-header with-border">
-      <h3 class="box-title">个人信息</h3>
+<div class="row">
+  <div class="col-md-6">
+    <div class="box box-warning">
+      <div class="box-header with-border">
+        <h3 class="box-title">个人信息</h3>
+      </div>
+      <div class="box-body">
+        <form role="form">
+          <div class="form-group">
+            <label>用户名</label>
+            <input type="text" class="form-control" value="{{ request.user.username }}" disabled>
+          </div>
+          <div class="form-group">
+            <label>邮箱</label>
+            <input type="text" class="form-control" value="{{ request.user.email }}" disabled>
+          </div>
+          <div class="form-group">
+            <label>角色</label>
+            <input type="text" class="form-control" value="{% if is_admin %}管理员{% else %}普通用户{% endif %}" disabled>
+          </div>
+        </form>
+      </div>
     </div>
-    <!-- /.box-header -->
-    <div class="box-body">
-      <form role="form">
-        <!-- text input -->
-        <div class="form-group">
-          <label>用户名</label>
-          <input type="text" class="form-control" value="{{ request.user.username }}" disabled>
-        </div>
-        <div class="form-group">
-          <label>邮箱</label>
-          <input type="text" class="form-control" value="{{ request.user.email }}" disabled>
-        </div>
-
-        <div class="form-group">
-          <label>API Token</label>
-          <input type="text" class="form-control" value="{{ apitoken }}" disabled>
-        </div>
-
-        <!-- textarea -->
-        <div class="form-group">
-          <label>备注</label>
-          <textarea class="form-control" rows="3" placeholder="暂无" disabled></textarea>
-        </div>
-      </form>
-    </div>
-    <!-- /.box-body -->
   </div>
+
+  <div class="col-md-6">
+    <div class="box box-info">
+      <div class="box-header with-border">
+        <h3 class="box-title">API Token</h3>
+      </div>
+      <div class="box-body">
+        {% if tokens %}
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>备注</th>
+              <th>Token</th>
+              <th>创建时间</th>
+              <th>最后使用</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in tokens %}
+            <tr>
+              <td>{{ t.name|default:"—" }}</td>
+              <td><code style="font-size:11px; word-break:break-all;">{{ t.token|slice:":16" }}...</code></td>
+              <td style="white-space:nowrap;">{{ t.created_at|date:"Y-m-d H:i" }}</td>
+              <td style="white-space:nowrap;">{{ t.last_used_at|date:"Y-m-d H:i"|default:"从未" }}</td>
+              <td>
+                <form method="post" action="{% url 'dashboard:userinfo_token_delete' t.id %}" style="display:inline;">
+                  {% csrf_token %}
+                  <button type="submit" class="btn btn-danger btn-xs" onclick="return confirm('确定撤销此 Token？')">撤销</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <p style="color:#6b7280;">暂无 API Token。创建后可用于 API 接口鉴权。</p>
+        {% endif %}
+
+        <hr>
+
+        <form method="post" action="{% url 'dashboard:userinfo_token_create' %}">
+          {% csrf_token %}
+          <div class="form-group">
+            <label>新 Token 备注（可选）</label>
+            <input type="text" class="form-control" name="name" placeholder="例如：CI/CD 自动扫描">
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="fa fa-plus"></i> 创建 Token
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block script %}
-
 <script>
-      $(document).ready(function () {
-          $("#dashboard").removeClass("active menu-open");
-          $("#dashboard").find("ul li").removeClass("active");
-          $("#user").addClass("active");
-      });
+$(document).ready(function () {
+  $("#dashboard").removeClass("active menu-open");
+  $("#dashboard").find("ul li").removeClass("active");
+  $("#user").addClass("active");
+});
 </script>
-
-
 {% endblock %}

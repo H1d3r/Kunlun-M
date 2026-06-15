@@ -35,11 +35,17 @@ def signup(req):
     if req.method == 'POST':
         form = UserCreationForm(req.POST)
         if form.is_valid():
-            form.save()
             username = form.cleaned_data.get('username')
+
+            # SUPER_ADMIN 中的用户自动设为管理员
+            from Kunlun_M.settings import SUPER_ADMIN
+            new_user = form.save(commit=False)
+            if username in SUPER_ADMIN:
+                new_user.is_staff = True
+            new_user.save()
+
             password = form.cleaned_data.get('password1')
-            email = form.cleaned_data.get('email')
-            user = auth.authenticate(username=username, password=password, email=email)
+            user = auth.authenticate(username=username, password=password)
 
             if user is not None and user.is_active:
                 auth.login(req, user)

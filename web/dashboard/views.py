@@ -157,12 +157,40 @@ def docs_raw(req):
 
 @login_required
 def userinfo(req):
+    from web.index.models import ApiToken
+
+    tokens = ApiToken.objects.filter(user=req.user, is_active=True).order_by('-created_at')
 
     data = {
-        "apitoken": API_TOKEN
+        "tokens": tokens,
+        "is_admin": req.user.is_staff,
     }
 
     return render(req, 'dashboard/userinfo.html', data)
+
+
+@login_required
+def userinfo_token_create(req):
+    import uuid
+    from web.index.models import ApiToken
+
+    name = (req.POST.get('name', '') or '').strip()
+    token = uuid.uuid4().hex + uuid.uuid4().hex  # 64 字符
+
+    ApiToken.objects.create(
+        user=req.user,
+        name=name,
+        token=token,
+    )
+    return redirect('dashboard:userinfo')
+
+
+@login_required
+def userinfo_token_delete(req, token_id):
+    from web.index.models import ApiToken
+
+    ApiToken.objects.filter(id=token_id, user=req.user).update(is_active=False)
+    return redirect('dashboard:userinfo')
 
 
 @login_required
