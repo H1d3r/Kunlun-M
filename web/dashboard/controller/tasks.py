@@ -75,7 +75,13 @@ class TaskListView(TemplateView):
 class TaskNewView(View):
     def get(self, request):
         max_mb = int(getattr(settings, "WEB_UPLOAD_MAX_MB", 50))
-        return render(request, "dashboard/tasks/task_upload.html", {"error_message": "", "max_mb": max_mb})
+        allowed_paths = getattr(settings, "WEB_SCAN_ALLOWED_PATHS", [])
+        path_scan_disabled = not bool(allowed_paths)
+        return render(request, "dashboard/tasks/task_upload.html", {
+            "error_message": "",
+            "max_mb": max_mb,
+            "path_scan_disabled": path_scan_disabled,
+        })
 
     def post(self, request):
         if "archive" not in request.FILES:
@@ -249,7 +255,8 @@ class TaskConfigView(View):
         task.is_finished = 3
         task.save()
 
-        check_and_new_project_id(task.id, task_name, "Upload", project_des=project_des)
+        origin_label = {"upload": "Upload", "path": "Local"}.get(task.source_type, "Unknown")
+        check_and_new_project_id(task.id, task_name, origin_label, project_des=project_des)
 
         from web.index.scan_dispatcher import try_dispatch
         try_dispatch()
@@ -319,3 +326,73 @@ class TaskDetailView(View):
                 'project': project,
             }
             return render(request, 'dashboard/tasks/task_detail.html', data)
+
+
+class TaskPathView(View):
+    """通过服务器本地路径创建扫描任务"""
+
+    def post(self, request):
+        allowed_paths = getattr(settings, "WEB_SCAN_ALLOWED_PATHS", [])
+        if not allowed_paths:
+            return render(request, "dashboard/tasks/task_upload.html", {
+                "error_message": "",
+                "max_mb": int(getattr(settings, "WEB_UPLOAD_MAX_MB", 50)),
+                "path_scan_disabled": True,
+                "path_error": "本地路径扫描未启用。请在 settings.py 中配置 WEB_SCAN_ALLOWED_PATHS。",
+            })
+
+        target_path = (request.POST.get("target_path", "") or "").strip()
+        if not target_path:
+            return render(request, "dashboard/tasks/task_upload.html", {
+                "error_message": "",
+                "max_mb": int(getattr(settings, "WEB_UPLOAD_MAX_MB", 50)),
+                "path_scan_disabled": False,
+                "path_error": "请输入项目路径",
+                "submitted_path": target_path,
+            })
+
+        target_path = os.path.abspath(os.path.expanduser(target_path))
+
+        if not os.path.isdir(target_path):
+            return render(request, "dashboard/tasks/task_upload.html", {
+                "error_message": "",
+                "max_mb": int(getattr(settings, "WEB_UPLOAD_MAX_MB", 50)),
+                "path_scan_disabled": False,
+                "path_error": "路径不存在或不是目录: {}".format(target_path),
+                "submitted_path": request.POST.get("target_path", ""),
+            })
+
+        if "*" not in allowed_paths:
+            real_path = os.path.realpath(target_path)
+            matched = False
+            for allowed_dir in allowed_paths:
+                real_allowed = os.path.realpath(os.path.abspath(allowed_dir))
+                if real_path == real_allowed or real_path.startswith(real_allowed + os.sep):
+                    matched = True
+                    break
+            if not matched:
+                return render(request, "dashboard/tasks/task_upload.html", {
+                    "error_message": "",
+                    "max_mb": int(getattr(settings, "WEB_UPLOAD_MAX_MB", 50)),
+                    "path_scan_disabled": False,
+                    "path_error": "路径不在允许的扫描范围内。允许的目录: {}".format(", ".join(allowed_paths)),
+                    "submitted_path": request.POST.get("target_path", ""),
+                })
+
+        task_name = (request.POST.get("task_name", "") or "").strip()
+        if not task_name:
+            task_name = os.path.basename(target_path.rstrip(os.sep)) or "unnamed"
+
+        task = ScanTask(
+            task_name=task_name,
+            target_path=target_path,
+            parameter_config=repr(["web", "path", target_path]),
+            is_finished=3,
+            source_type="path",
+            options_json=json.dumps({}, ensure_ascii=False),
+            created_at=timezone.now(),
+            last_scan_time=timezone.now(),
+        )
+        task.save()
+
+        return redirect("dashboard:task_config", task_id=task.id)

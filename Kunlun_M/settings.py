@@ -204,6 +204,9 @@ IS_OPEN_REMOTE_SERVER = False
 REMOTE_URL = "http://127.0.0.1:9999"
 REMOTE_URL_APITOKEN = "secret_api_token_in_server"
 
+# 本地路径扫描白名单。空列表=禁止，["*"]=允许所有，["/path1","/path2"]=白名单
+WEB_SCAN_ALLOWED_PATHS = []
+
 WEB_UPLOAD_MAX_MB = 50
 WEB_PACKAGE_RETENTION_DAYS = 7
 WEB_SCAN_MAX_CONCURRENCY = 1

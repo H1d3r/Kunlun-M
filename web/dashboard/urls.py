@@ -20,6 +20,7 @@ urlpatterns = [
     path('tasks/list', login_required(tasks.TaskListView.as_view()), name='tasks_list'),
     path('tasks/detail/<int:task_id>', tasks.TaskDetailView.as_view(), name="task_detail"),
     path('tasks/new', login_required(tasks.TaskNewView.as_view()), name="task_new"),
+    path('tasks/path/', login_required(tasks.TaskPathView.as_view()), name='task_path'),
     path('tasks/config/<int:task_id>', login_required(tasks.TaskConfigView.as_view()), name="task_config"),
 
     # projects
