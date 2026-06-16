@@ -27,13 +27,13 @@
 
   <!-- 右侧代码查看器 -->
   <div class="col-md-9" style="padding-left:8px;">
-    <div class="box box-solid">
-      <div class="box-header with-border" style="padding:8px 12px;">
-        <div id="breadcrumb" style="font-size:13px; margin:0; line-height:28px;">
+    <div class="box box-solid" style="border:none; background:#1e1e2e;">
+      <div class="box-header with-border" style="padding:8px 12px; background:#181825; border-bottom:1px solid #313244;">
+        <div id="breadcrumb" style="font-size:13px; margin:0; line-height:28px; color:#cdd6f4;">
           <i class="fa fa-code"></i> 选择文件查看源码
         </div>
         <div class="box-tools pull-right" id="codeToolbar" style="display:none;">
-          <span id="fileInfo" style="font-size:12px; color:#999; margin-right:12px;"></span>
+          <span id="fileInfo" style="font-size:12px; color:#6c7086; margin-right:12px;"></span>
           <button type="button" class="btn btn-xs btn-default" onclick="copyCode()"><i class="fa fa-copy"></i> 复制</button>
         </div>
       </div>
@@ -43,12 +43,12 @@
             <tbody id="codeBody"></tbody>
           </table>
         </div>
-        <div id="welcomePanel" style="padding:60px 20px; text-align:center; color:#999;">
+        <div id="welcomePanel" style="padding:60px 20px; text-align:center; color:#6c7086;">
           <i class="fa fa-folder-open-o" style="font-size:48px; margin-bottom:12px;"></i>
           <p>从左侧文件树选择文件查看源码</p>
           <p style="font-size:12px;">支持点击文件夹展开，双击文件查看内容</p>
         </div>
-        <div id="errorPanel" style="display:none; padding:60px 20px; text-align:center; color:#c00;">
+        <div id="errorPanel" style="display:none; padding:60px 20px; text-align:center; color:#f38ba8;">
           <i class="fa fa-exclamation-triangle" style="font-size:48px; margin-bottom:12px;"></i>
           <p id="errorMessage">文件加载失败</p>
         </div>
@@ -58,10 +58,11 @@
 </div>
 
 <style>
+/* ── 文件树 ── */
 .km-file-tree { user-select:none; }
-.km-tree-item { padding:2px 6px; cursor:pointer; white-space:nowrap; border-radius:3px; }
-.km-tree-item:hover { background:rgba(255,255,255,0.08); }
-.km-tree-item.active { background:#337ab7; color:#fff; border-radius:3px; }
+.km-tree-item { padding:3px 8px; cursor:pointer; white-space:nowrap; border-radius:3px; color:#ddd; font-size:13px; }
+.km-tree-item:hover { background:rgba(255,255,255,0.08); color:#fff; }
+.km-tree-item.active { background:#337ab7; color:#fff; }
 .km-tree-item .fa { width:16px; text-align:center; margin-right:4px; font-size:12px; }
 .km-tree-item .km-tree-chevron { width:14px; display:inline-block; text-align:center; margin-right:2px; font-size:10px; color:#999; transition:transform 0.15s; }
 .km-tree-item .km-tree-chevron.open { transform:rotate(90deg); }
@@ -69,27 +70,60 @@
 .km-tree-children.open { display:block; }
 .km-tree-hidden { display:none !important; }
 
-/* 代码面板 */
-.km-code-table td { padding:0 12px; vertical-align:top; }
-.km-code-line-num { width:50px; min-width:50px; text-align:right; color:#666; border-right:1px solid #eee; user-select:none; cursor:pointer; padding-right:10px !important; }
-.km-code-line-num:hover { background:#f0f0f0; }
-.km-code-line { white-space:pre-wrap; word-break:break-all; }
-.km-line-highlight { background:#fff8c4 !important; }
-.km-line-highlight td { background:#fff8c4 !important; }
-.km-line-hl-anchor { background:#f0ad4e !important; border-left:3px solid #ec971f; }
-.km-line-hl-anchor td { background:#f0ad4e !important; }
-.km-code-table tr:hover td { background:#f8f8f8 !important; }
-.km-line-hl-anchor:hover td { background:#ec971f !important; }
-.km-line-highlight:hover td { background:#ffed8a !important; }
+/* ── 代码面板 ── */
+.km-code-panel { font-family:'Fira Code',Consolas,'Courier New',monospace; font-size:13px; line-height:1.45; }
+.km-code-table { width:100%; border-collapse:collapse; border:none; background:#1e1e2e; color:#cdd6f4; }
+.km-code-table tr { border:none !important; }
+.km-code-table td { padding:0 12px; vertical-align:top; border:none !important; }
+.km-code-line-num { width:50px; min-width:50px; text-align:right; color:#6c7086; user-select:none; cursor:pointer; padding-right:10px !important; font-size:12px; }
+.km-code-line-num:hover { background:rgba(255,255,255,0.05); }
+.km-code-line { white-space:pre; tab-size:4; }
+.km-line-highlight { background:rgba(249,226,175,0.15) !important; }
+.km-line-hl-anchor { background:rgba(249,226,175,0.3) !important; border-left:3px solid #f0ad4e; }
+.km-code-table tr:hover td { background:rgba(255,255,255,0.04) !important; }
+.km-line-hl-anchor:hover td { background:rgba(249,226,175,0.35) !important; }
+.km-line-highlight:hover td { background:rgba(249,226,175,0.2) !important; }
 
 /* 面包屑 */
 #breadcrumb a { color:#337ab7; cursor:pointer; }
 #breadcrumb a:hover { text-decoration:underline; }
+
+/* Prism 覆盖 — 配合深底色 */
+.km-code-panel .token.comment,
+.km-code-panel .token.prolog,
+.km-code-panel .token.doctype,
+.km-code-panel .token.cdata { color:#6c7086; font-style:italic; }
+.km-code-panel .token.punctuation { color:#9399b2; }
+.km-code-panel .token.property,
+.km-code-panel .token.tag,
+.km-code-panel .token.boolean,
+.km-code-panel .token.number,
+.km-code-panel .token.constant,
+.km-code-panel .token.symbol { color:#fab387; }
+.km-code-panel .token.selector,
+.km-code-panel .token.attr-name,
+.km-code-panel .token.string,
+.km-code-panel .token.char,
+.km-code-panel .token.builtin { color:#a6e3a1; }
+.km-code-panel .token.operator,
+.km-code-panel .token.entity,
+.km-code-panel .token.url { color:#89dceb; }
+.km-code-panel .token.atrule,
+.km-code-panel .token.attr-value,
+.km-code-panel .token.keyword { color:#cba6f7; }
+.km-code-panel .token.function { color:#89b4fa; }
+.km-code-panel .token.regex,
+.km-code-panel .token.important,
+.km-code-panel .token.variable { color:#f38ba8; }
+.km-code-panel .token.class-name { color:#f9e2af; }
+.km-code-panel .token.deleted { color:#f38ba8; background:rgba(243,139,168,0.1); }
+.km-code-panel .token.inserted { color:#a6e3a1; background:rgba(166,227,161,0.1); }
 </style>
 
 {% endblock %}
 
 {% block script %}
+<script src="{% static 'js/prism.js' %}"></script>
 <script>
 var project_id = $('#projectId').val();
 var source_root = $('#sourceRoot').val();
@@ -253,23 +287,31 @@ function openFile(filePath) {
 function renderCode(lines, highlight, totalLines) {
   var $body = $('#codeBody');
   $body.empty();
-  for (var i = 0; i < lines.length; i++) {
+  var lang = getLang(current_file);
+
+  // 整段高亮再按行拆分（保持跨行语法正确）
+  var fullText = lines.join('\n');
+  var highlightedHtml;
+  if (prismLoaded && lang && Prism.languages[lang]) {
+    try { highlightedHtml = Prism.highlight(fullText, Prism.languages[lang], lang); } catch(e) { highlightedHtml = escHtml(fullText); }
+  } else {
+    highlightedHtml = escHtml(fullText);
+  }
+  // 用 \n 拆分（保留每行末尾换行）
+  var hLines = highlightedHtml.split('\n');
+  // 最后一个元素是空串（trailing \n 产生），去掉
+  if (hLines.length > lines.length) hLines.pop();
+
+  for (var i = 0; i < hLines.length; i++) {
     var lineno = i + 1;
     var isHighlight = (highlight === lineno);
     var cls = isHighlight ? 'km-line-hl-anchor' : '';
-    // 前后 5 行浅高亮
     if (!isHighlight && highlight && Math.abs(lineno - highlight) <= 5) {
       cls = 'km-line-highlight';
     }
     var $tr = $('<tr>').addClass(cls).attr('data-lineno', lineno);
-    var code = escHtml(lines[i]);
-    // Prism 高亮（客户端）
-    var lang = getLang(current_file);
-    if (prismLoaded && lang && Prism.languages[lang]) {
-      try { code = Prism.highlight(lines[i], Prism.languages[lang], lang); } catch(e) {}
-    }
     $tr.append($('<td>').addClass('km-code-line-num').text(lineno));
-    $tr.append($('<td>').addClass('km-code-line').html(code || ' '));
+    $tr.append($('<td>').addClass('km-code-line').html(hLines[i] || ' '));
     $body.append($tr);
   }
   // 滚动到高亮行
