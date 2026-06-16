@@ -262,19 +262,19 @@
                     </td>
                   </tr>
                   {% endfor %}
+
+                  <!-- 传播链面板（inline，JS 移动到对应行位置） -->
+                  <tr id="chainPanel" class="km-chain-row" style="display:none;">
+                    <td colspan="9" style="padding:0 !important; border:none !important;">
+                      <div class="km-chain-panel">
+                        <div class="km-chain-sidebar" id="chainSidebar"></div>
+                        <div class="km-chain-code" id="chainCode"></div>
+                      </div>
+                    </td>
+                  </tr>
                 </tbody>
               </table>
     </div>
-
-    <!-- 传播链面板（inline，JS 移动到对应行位置） -->
-    <tr id="chainPanel" class="km-chain-row" style="display:none;">
-      <td colspan="9" style="padding:0 !important; border:none !important;">
-        <div class="km-chain-panel">
-          <div class="km-chain-sidebar" id="chainSidebar"></div>
-          <div class="km-chain-code" id="chainCode"></div>
-        </div>
-      </td>
-    </tr>
 
     {% csrf_token %}
 
