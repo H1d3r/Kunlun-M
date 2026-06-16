@@ -21,13 +21,12 @@ from web.index.models import get_and_check_scantask_project_id, get_and_check_sc
 from utils.utils import show_context
 
 from Kunlun_M.settings import LOGS_PATH
+from utils.path_safety import is_path_under
 
 
 def _is_path_under_allowed_dir(path, allowed_dir):
-    """检查路径是否在允许的目录内，防止路径遍历攻击"""
-    real_path = os.path.realpath(path)
-    real_allowed = os.path.realpath(allowed_dir)
-    return real_path == real_allowed or real_path.startswith(real_allowed + os.sep)
+    """检查路径是否在允许的目录内，防止路径遍历攻击（已迁移到 utils.path_safety）"""
+    return is_path_under(path, allowed_dir)
 
 
 def index(request):

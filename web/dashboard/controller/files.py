@@ -9,6 +9,7 @@ from django.views.generic import TemplateView
 from django.contrib.auth.decorators import login_required
 
 from web.index.models import ScanTask, Project
+from utils.path_safety import safe_join, is_path_under
 
 
 class ProjectFilesView(TemplateView):
@@ -49,11 +50,11 @@ class ProjectFilesApiView(View):
             if not root:
                 return JsonResponse({"entries": []})
 
-        base = os.path.normpath(root)
-        target = os.path.normpath(os.path.join(root, req_dir.replace('/', os.sep))) if req_dir else base
+        # 安全校验：safe_join 处理 symlink + 路径穿越
+        base = os.path.realpath(root)
+        target = safe_join(root, req_dir.replace('/', os.sep)) if req_dir else base
 
-        # 路径遍历防护（兼容 / 和 os.sep）
-        if not (target == base or target.startswith(base + os.sep) or target.startswith(base + '/')):
+        if target is None or not is_path_under(target, root):
             return JsonResponse({"error": "forbidden"}, status=403)
         if not os.path.isdir(target):
             return JsonResponse({"entries": []})
@@ -99,12 +100,12 @@ class ProjectFileContentApiView(View):
             task = ScanTask.objects.filter(project_id=project_id).order_by('-id').first()
             root = (task.source_dir or task.target_path or '') if task else ''
 
-        abs_path = os.path.normpath(os.path.join(root, req_file.replace('/', os.sep))) if root and req_file else ''
-        base = os.path.normpath(root) if root else ''
-
-        if not abs_path or not base:
+        if not root or not req_file:
             return JsonResponse({"error": "no source"}, status=404)
-        if not (abs_path == base or abs_path.startswith(base + os.sep) or abs_path.startswith(base + '/')):
+
+        # 安全校验：safe_join 解析 symlink + 规范化路径
+        abs_path = safe_join(root, req_file.replace('/', os.sep))
+        if abs_path is None or not is_path_under(abs_path, root):
             return JsonResponse({"error": "forbidden"}, status=403)
         if not os.path.isfile(abs_path):
             return JsonResponse({"error": "not found"}, status=404)

@@ -20,6 +20,7 @@ from web.index.scan_dispatcher import try_dispatch
 
 from Kunlun_M.settings import API_TOKEN
 import os
+from utils.path_safety import safe_join, is_path_under
 
 
 @login_required
@@ -70,11 +71,8 @@ def _safe_doc_abspath(rel_path):
     rel_path = _normalize_doc_path(rel_path)
     if not rel_path:
         return None, None
-    root = os.path.abspath(_docs_root())
-    abs_path = os.path.abspath(os.path.join(root, rel_path))
-    if not (abs_path == root or abs_path.startswith(root + os.sep)):
-        return None, None
-    return rel_path, abs_path
+    root = _docs_root()
+    return rel_path, safe_join(root, rel_path)
 
 
 @login_required
@@ -198,6 +196,7 @@ def userinfo_token_delete(req, token_id):
 def code_view(req, task_id):
     """查看任务关联的源代码文件"""
     from web.index.models import ScanTask
+    from utils.path_safety import safe_join, is_path_under
 
     task = ScanTask.objects.filter(id=task_id).first()
     if not task:
@@ -222,9 +221,9 @@ def code_view(req, task_id):
 
     if req_file:
         rel_path = req_file
-        abs_path = os.path.normpath(os.path.join(scan_dir, req_file))
-        # 防路径遍历
-        if not abs_path.startswith(scan_dir + os.sep) and abs_path != scan_dir:
+        # 安全校验：safe_join 解析 symlink + 规范化路径
+        abs_path = safe_join(scan_dir, req_file)
+        if abs_path is None or not is_path_under(abs_path, scan_dir):
             error = "Invalid file path"
         elif not os.path.isfile(abs_path):
             error = "File not found"
