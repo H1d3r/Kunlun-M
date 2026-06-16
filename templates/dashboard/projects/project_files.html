@@ -17,7 +17,7 @@
       <div style="padding:4px 8px; border-bottom:1px solid #ddd; background:#eaedf1;">
         <input type="text" id="treeFilter" class="form-control input-sm" placeholder="过滤文件..." style="font-size:12px;">
       </div>
-      <div class="box-body" style="padding:4px 0; max-height:calc(100vh - 160px); overflow-y:auto; background:#eaedf1 !important;">
+      <div id="treeWrapper" class="box-body" style="padding:4px 0; max-height:calc(100vh - 160px); overflow-y:auto; background:#eaedf1 !important; scrollbar-width:none; -ms-overflow-style:none;">
         <ul id="fileTree" class="km-file-tree" style="list-style:none; padding-left:8px; margin:0; font-size:13px;">
           <li class="km-tree-loading"><i class="fa fa-spinner fa-spin"></i> 加载中...</li>
         </ul>
@@ -34,7 +34,7 @@
         </div>
 
       </div>
-      <div class="box-body" style="padding:0; max-height:calc(100vh - 120px); overflow:auto; background:#eaedf1 !important;">
+      <div id="codeBodyWrapper" class="box-body" style="padding:0; max-height:calc(100vh - 120px); overflow:auto; background:#eaedf1 !important; scrollbar-width:none; -ms-overflow-style:none;">
         <div id="codePanel" class="km-code-panel" style="display:none;">
           <table class="km-code-table" style="width:100%; border-collapse:collapse; font-family:'Fira Code',Consolas,monospace; font-size:13px; line-height:1.0;">
             <tbody id="codeBody"></tbody>
@@ -66,6 +66,12 @@
 .km-tree-children { padding-left:16px; display:none; }
 .km-tree-children.open { display:block; }
 .km-tree-hidden { display:none !important; }
+
+/* 隐藏滚动条（保持可滚动） */
+.km-code-panel { overflow:auto; scrollbar-width:none; -ms-overflow-style:none; }
+.km-code-panel::-webkit-scrollbar { display:none; }
+#codeBodyWrapper::-webkit-scrollbar { display:none; }
+#treeWrapper::-webkit-scrollbar { display:none; }
 
 /* ── 代码面板（浅灰） ── */
 .km-code-panel { font-family:'Fira Code',Consolas,'Courier New',monospace; font-size:13px; line-height:1.0; }
