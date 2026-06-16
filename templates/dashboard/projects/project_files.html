@@ -27,13 +27,13 @@
 
   <!-- 右侧代码查看器 -->
   <div class="col-md-9" style="padding-left:8px;">
-    <div class="box box-solid" style="border:none; background:#1e1e2e;">
-      <div class="box-header with-border" style="padding:8px 12px; background:#181825; border-bottom:1px solid #313244;">
-        <div id="breadcrumb" style="font-size:13px; margin:0; line-height:28px; color:#cdd6f4;">
+    <div class="box box-solid" style="border:1px solid #e1e4e8;">
+      <div class="box-header with-border" style="padding:8px 12px; background:#f6f8fa; border-bottom:1px solid #e1e4e8;">
+        <div id="breadcrumb" style="font-size:13px; margin:0; line-height:28px;">
           <i class="fa fa-code"></i> 选择文件查看源码
         </div>
         <div class="box-tools pull-right" id="codeToolbar" style="display:none;">
-          <span id="fileInfo" style="font-size:12px; color:#6c7086; margin-right:12px;"></span>
+          <span id="fileInfo" style="font-size:12px; color:#959da5; margin-right:12px;"></span>
           <button type="button" class="btn btn-xs btn-default" onclick="copyCode()"><i class="fa fa-copy"></i> 复制</button>
         </div>
       </div>
@@ -43,12 +43,12 @@
             <tbody id="codeBody"></tbody>
           </table>
         </div>
-        <div id="welcomePanel" style="padding:60px 20px; text-align:center; color:#6c7086;">
+        <div id="welcomePanel" style="padding:60px 20px; text-align:center; color:#959da5;">
           <i class="fa fa-folder-open-o" style="font-size:48px; margin-bottom:12px;"></i>
           <p>从左侧文件树选择文件查看源码</p>
           <p style="font-size:12px;">支持点击文件夹展开，双击文件查看内容</p>
         </div>
-        <div id="errorPanel" style="display:none; padding:60px 20px; text-align:center; color:#f38ba8;">
+        <div id="errorPanel" style="display:none; padding:60px 20px; text-align:center; color:#d73a49;">
           <i class="fa fa-exclamation-triangle" style="font-size:48px; margin-bottom:12px;"></i>
           <p id="errorMessage">文件加载失败</p>
         </div>
@@ -70,54 +70,23 @@
 .km-tree-children.open { display:block; }
 .km-tree-hidden { display:none !important; }
 
-/* ── 代码面板 ── */
-.km-code-panel { font-family:'Fira Code',Consolas,'Courier New',monospace; font-size:13px; line-height:1.45; }
-.km-code-table { width:100%; border-collapse:collapse; border:none; background:#1e1e2e; color:#cdd6f4; }
+/* ── 代码面板（浅色） ── */
+.km-code-panel { font-family:'Fira Code',Consolas,'Courier New',monospace; font-size:13px; line-height:1.5; }
+.km-code-table { width:100%; border-collapse:collapse; background:#f6f8fa; color:#24292e; }
 .km-code-table tr { border:none !important; }
 .km-code-table td { padding:0 12px; vertical-align:top; border:none !important; }
-.km-code-line-num { width:50px; min-width:50px; text-align:right; color:#6c7086; user-select:none; cursor:pointer; padding-right:10px !important; font-size:12px; }
-.km-code-line-num:hover { background:rgba(255,255,255,0.05); }
+.km-code-line-num { width:50px; min-width:50px; text-align:right; color:#959da5; user-select:none; cursor:pointer; padding-right:10px !important; font-size:12px; }
+.km-code-line-num:hover { background:rgba(0,0,0,0.06); }
 .km-code-line { white-space:pre; tab-size:4; }
-.km-line-highlight { background:rgba(249,226,175,0.15) !important; }
-.km-line-hl-anchor { background:rgba(249,226,175,0.3) !important; border-left:3px solid #f0ad4e; }
-.km-code-table tr:hover td { background:rgba(255,255,255,0.04) !important; }
-.km-line-hl-anchor:hover td { background:rgba(249,226,175,0.35) !important; }
-.km-line-highlight:hover td { background:rgba(249,226,175,0.2) !important; }
+.km-line-highlight { background:#fffbe6 !important; }
+.km-line-hl-anchor { background:#fff3cd !important; border-left:3px solid #f0ad4e; }
+.km-code-table tr:hover td { background:rgba(0,0,0,0.04) !important; }
+.km-line-hl-anchor:hover td { background:#ffe69c !important; }
+.km-line-highlight:hover td { background:#fff5cc !important; }
 
 /* 面包屑 */
 #breadcrumb a { color:#337ab7; cursor:pointer; }
 #breadcrumb a:hover { text-decoration:underline; }
-
-/* Prism 覆盖 — 配合深底色 */
-.km-code-panel .token.comment,
-.km-code-panel .token.prolog,
-.km-code-panel .token.doctype,
-.km-code-panel .token.cdata { color:#6c7086; font-style:italic; }
-.km-code-panel .token.punctuation { color:#9399b2; }
-.km-code-panel .token.property,
-.km-code-panel .token.tag,
-.km-code-panel .token.boolean,
-.km-code-panel .token.number,
-.km-code-panel .token.constant,
-.km-code-panel .token.symbol { color:#fab387; }
-.km-code-panel .token.selector,
-.km-code-panel .token.attr-name,
-.km-code-panel .token.string,
-.km-code-panel .token.char,
-.km-code-panel .token.builtin { color:#a6e3a1; }
-.km-code-panel .token.operator,
-.km-code-panel .token.entity,
-.km-code-panel .token.url { color:#89dceb; }
-.km-code-panel .token.atrule,
-.km-code-panel .token.attr-value,
-.km-code-panel .token.keyword { color:#cba6f7; }
-.km-code-panel .token.function { color:#89b4fa; }
-.km-code-panel .token.regex,
-.km-code-panel .token.important,
-.km-code-panel .token.variable { color:#f38ba8; }
-.km-code-panel .token.class-name { color:#f9e2af; }
-.km-code-panel .token.deleted { color:#f38ba8; background:rgba(243,139,168,0.1); }
-.km-code-panel .token.inserted { color:#a6e3a1; background:rgba(166,227,161,0.1); }
 </style>
 
 {% endblock %}
