@@ -33,6 +33,7 @@ urlpatterns = [
     # rule
     path('rules/list', login_required(rules.RuleListView.as_view()), name='rules_list'),
     path('rules/detail/<int:rule_id>', rules.RuleDetailView.as_view(), name="rule_detail"),
+    path('rules/source/<int:rule_id>', rules.RuleSourceJsonView.as_view(), name="rule_source"),
 
     # tamper
     path('tampers/list', login_required(tampers.TamperListView.as_view()), name='tampers_list'),

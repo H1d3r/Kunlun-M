@@ -1,80 +1,63 @@
 {% extends "dashboard/base.html" %}
+{% load static %}
 {% block title %}规则列表{% endblock %}
 
 {% block body %}
-<div class="pad margin no-print" style="padding-left: 0px;margin-left: 0px;">
-  <div class="callout callout-info" style="margin-bottom: 0!important;">
-    <h4><i class="fa fa-info"></i> 说明：</h4>
-      当规则状态为关闭时，无论是否勾选该规则，仍然会跳过该规则。</br>
-  </div>
-</div>
+<link rel="stylesheet" href="{% static 'css/prism.css' %}">
 <div class="row">
-        <div class="col-xs-12">
-          <div class="box">
-            <div class="box-header">
-              <h3 class="box-title">规则列表</h3>
-              <div class="box-tools pull-right">
-                <div class="btn-group">
-                  <button class="btn btn-xs btn-default lang-filter active" data-lang="all">全部</button>
-                  <button class="btn btn-xs btn-default lang-filter" data-lang="php">PHP</button>
-                  <button class="btn btn-xs btn-default lang-filter" data-lang="python">Python</button>
-                  <button class="btn btn-xs btn-default lang-filter" data-lang="javascript">JS</button>
-                  <button class="btn btn-xs btn-default lang-filter" data-lang="java">Java</button>
-                  <button class="btn btn-xs btn-default lang-filter" data-lang="go">Go</button>
-                  <button class="btn btn-xs btn-default lang-filter" data-lang="c">C</button>
+    <div class="col-xs-12">
+      <div class="box">
+        <div class="box-header">
+          <h3 class="box-title">规则列表</h3>
+          <div class="box-tools pull-right">
+            <input type="text" id="ruleSearch" class="form-control input-sm" style="width:200px;" placeholder="搜索规则名/CVI/描述...">
+          </div>
+        </div>
+        <div class="box-body">
+          <div class="km-tamper-split">
+            <div class="km-tamper-list">
+              <div class="km-tamper-list-header">
+                <input id="ruleFilterInput" class="form-control input-sm km-tamper-filter" placeholder="搜索规则...">
+              </div>
+              <div id="ruleList" class="km-tamper-items">
+                {% for lang, rule_list in lang_groups %}
+                <div class="km-tamper-group" data-lang="{{ lang }}">
+                  <button type="button" class="km-tamper-lang">
+                    <span class="km-tamper-lang-arrow">▼</span>
+                    <span class="km-tamper-lang-name">{{ lang }}</span>
+                    <span class="km-tamper-lang-count">{{ rule_list|length }}</span>
+                  </button>
+                  <div class="km-tamper-children">
+                    {% for rule in rule_list %}
+                    <button type="button" class="km-tamper-item" data-id="{{ rule.id }}" data-name="{{ rule.rule_name|lower }}" data-lang="{{ lang }}">
+                      <span class="km-tamper-item-name">CVI_{{ rule.svid }}</span>
+                      <span class="km-tamper-item-sub">{{ rule.rule_name }}</span>
+                    </button>
+                    {% endfor %}
+                  </div>
                 </div>
-                <input type="text" id="ruleSearch" class="form-control input-sm pull-right" style="width:200px;" placeholder="搜索规则名/CVI/描述...">
+                {% endfor %}
               </div>
             </div>
-            <!-- /.box-header -->
-            <div class="box-body table-responsive no-padding">
-              <table class="table table-hover km-table km-table-wide" id="ruleTable">
-                <thead>
-                  <tr>
-                    <th class="km-col-id">ID</th>
-                    <th>规则名</th>
-                    <th class="km-td-nowrap">SVID</th>
-                    <th class="km-td-nowrap">语言</th>
-                    <th class="km-td-nowrap">作者</th>
-                    <th>描述</th>
-                    <th class="km-td-nowrap">状态</th>
-                    <th class="km-td-nowrap">匹配模式</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {% for rule in rules %}
-                  <tr data-lang="{{ rule.language|lower }}">
-                    <td class="km-td-nowrap">{{ rule.id }}</td>
-                    <td>
-                      <div class="km-cell-title">
-                        <a class="km-link-strong" href="{% url 'dashboard:rule_detail' rule.id %}" title="{{ rule.rule_name|escape }}">{{ rule.rule_name }}</a>
-                      </div>
-                    </td>
-                    <td class="km-td-nowrap">{{ rule.svid }}</td>
-                    <td class="km-td-nowrap">{{ rule.language }}</td>
-                    <td class="km-td-nowrap">{{ rule.author }}</td>
-                    <td><div class="km-cell-config" title="{{ rule.description|escape }}">{{ rule.description }}</div></td>
-                    <td class="km-td-nowrap">
-                      {% if rule.status %}
-                      <span class="label label-success">开启</span>
-                      {% else %}
-                      <span class="label label-info">关闭</span>
-                      {% endif %}
-                    </td>
-                    <td class="km-td-nowrap">{{ rule.match_mode }}</td>
-                  </tr>
-                  {% endfor %}
-                </tbody>
-              </table>
+            <div class="km-tamper-detail">
+              <div class="km-tamper-detail-toolbar">
+                <div id="ruleDetailTitle" class="km-tamper-detail-title">选择一个规则查看详情</div>
+                <button id="ruleCopyBtn" type="button" class="btn btn-default btn-xs">复制</button>
+              </div>
+              <pre class="language-python"><code id="ruleDetailCode" class="language-python"></code></pre>
             </div>
-            <!-- /.box-body -->
           </div>
-          <!-- /.box -->
         </div>
+        <!-- /.box-body -->
       </div>
+      <!-- /.box -->
+    </div>
+</div>
 {% endblock %}
 
 {% block script %}
+
+<script src="{% static 'js/prism.js' %}"></script>
 
 <script>
       $(document).ready(function () {
@@ -84,27 +67,111 @@
           $("#rules").find("ul").find("li#rule_list").addClass("active");
           $("#rules").find("ul").css("display","block");
 
-          // 规则筛选
-          var curLang = 'all', curSearch = '';
-          function filterRules(){
-            $("#ruleTable tbody tr").each(function(){
-              var $r = $(this);
-              var t = $r.text().toLowerCase();
-              var m1 = curLang==='all' || $r.data('lang')===curLang;
-              var m2 = !curSearch || t.indexOf(curSearch)>=0;
-              $r.toggle(m1 && m2);
-            });
+          var $list = $("#ruleList");
+          var $detailTitle = $("#ruleDetailTitle");
+          var detailCodeEl = document.getElementById("ruleDetailCode");
+          var cache = {};
+          var currentId = null;
+
+          function loadSource(id, callback) {
+              if (cache[id]) { callback(cache[id]); return; }
+              $.get("/dashboard/rules/source/" + id + "/", function (data) {
+                  cache[id] = data;
+                  callback(data);
+              }).fail(function () {
+                  callback({ source: '', error: true });
+              });
           }
-          $(".lang-filter").click(function(){
-            $(".lang-filter").removeClass("active btn-primary").addClass("btn-default");
-            $(this).addClass("active btn-primary").removeClass("btn-default");
-            curLang = $(this).data('lang');
-            filterRules();
+
+          function setActive($btn) {
+              $list.find(".km-tamper-item").removeClass("is-active");
+              $btn.addClass("is-active");
+          }
+
+          function showDetail($btn) {
+              var id = $btn.attr("data-id");
+              var title = $btn.find(".km-tamper-item-name").text() + " - " + $btn.find(".km-tamper-item-sub").text();
+              $detailTitle.text(title);
+              detailCodeEl.textContent = "";
+              currentId = id;
+              loadSource(id, function (data) {
+                  // 确保用户还在看同一条规则
+                  if (currentId !== id) return;
+                  detailCodeEl.textContent = data.source || "(源文件未找到)";
+                  if (window.Prism) Prism.highlightElement(detailCodeEl);
+              });
+          }
+
+          function pickFirstVisible() {
+              var $first = $list.find(".km-tamper-item:visible").first();
+              if ($first.length) {
+                  setActive($first);
+                  showDetail($first);
+              } else {
+                  $list.find(".km-tamper-item").removeClass("is-active");
+                  $detailTitle.text("没有匹配的规则");
+                  detailCodeEl.textContent = "";
+              }
+          }
+
+          // 语言分组折叠
+          $list.on("click", ".km-tamper-lang", function (e) {
+              e.stopPropagation();
+              var $group = $(this).closest(".km-tamper-group");
+              var $children = $group.find(".km-tamper-children");
+              var $arrow = $(this).find(".km-tamper-lang-arrow");
+              $children.slideToggle(150);
+              $group.toggleClass("is-collapsed");
+              $arrow.text($group.hasClass("is-collapsed") ? "▶" : "▼");
           });
-          $("#ruleSearch").on("input", function(){
-            curSearch = $(this).val().toLowerCase().trim();
-            filterRules();
+
+          // 点击规则
+          $list.on("click", ".km-tamper-item", function (e) {
+              e.stopPropagation();
+              setActive($(this));
+              showDetail($(this));
           });
+
+          // 搜索过滤
+          $("#ruleFilterInput").on("input", function () {
+              var q = ($(this).val() || "").toLowerCase().trim();
+              $list.find(".km-tamper-group").each(function () {
+                  var $group = $(this);
+                  var lang = ($group.attr("data-lang") || "").toLowerCase();
+                  var hasMatch = !q;
+                  $group.find(".km-tamper-item").each(function () {
+                      var name = ($(this).attr("data-name") || "");
+                      var sub = ($(this).find(".km-tamper-item-sub").text() || "").toLowerCase();
+                      var ok = !q || name.indexOf(q) > -1 || lang.indexOf(q) > -1 || sub.indexOf(q) > -1;
+                      $(this).toggle(ok);
+                      if (ok) hasMatch = true;
+                  });
+                  $group.toggle(hasMatch);
+                  if (q && hasMatch) {
+                      $group.removeClass("is-collapsed");
+                      $group.find(".km-tamper-children").show();
+                      $group.find(".km-tamper-lang-arrow").text("▼");
+                  }
+              });
+              pickFirstVisible();
+          });
+
+          // 复制
+          $("#ruleCopyBtn").on("click", function () {
+              var text = detailCodeEl.textContent || "";
+              if (!text) return;
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(text);
+              } else {
+                  var $tmp = $("<textarea>");
+                  $("body").append($tmp);
+                  $tmp.val(text).select();
+                  document.execCommand("copy");
+                  $tmp.remove();
+              }
+          });
+
+          pickFirstVisible();
       });
 </script>
 
