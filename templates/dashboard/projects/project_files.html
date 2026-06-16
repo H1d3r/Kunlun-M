@@ -17,7 +17,7 @@
           <input type="text" id="treeFilter" class="form-control input-sm" placeholder="过滤..." style="width:120px;height:26px;font-size:12px;">
         </div>
       </div>
-      <div class="box-body" style="padding:6px 0; max-height:calc(100vh - 120px); overflow-y:auto; background:#f6f8fa !important;">
+      <div class="box-body" style="padding:6px 0; max-height:calc(100vh - 120px); overflow-y:auto; background:#eaedf1 !important;">
         <ul id="fileTree" class="km-file-tree" style="list-style:none; padding-left:8px; margin:0; font-size:13px;">
           <li class="km-tree-loading"><i class="fa fa-spinner fa-spin"></i> 加载中...</li>
         </ul>
@@ -27,8 +27,8 @@
 
   <!-- 右侧代码查看器 -->
   <div class="col-md-9" style="padding-left:8px;">
-    <div class="box box-solid" style="border:1px solid #e1e4e8; background:#f6f8fa;">
-      <div class="box-header with-border" style="padding:8px 12px; background:#f6f8fa !important; border-bottom:1px solid #e1e4e8;">
+    <div class="box box-solid" style="border:1px solid #e1e4e8; background:#eaedf1;">
+      <div class="box-header with-border" style="padding:8px 12px; background:#eaedf1 !important; border-bottom:1px solid #e1e4e8;">
         <div id="breadcrumb" style="font-size:13px; margin:0; line-height:28px;">
           <i class="fa fa-code"></i> 选择文件查看源码
         </div>
@@ -37,9 +37,9 @@
           <button type="button" class="btn btn-xs btn-default" onclick="copyCode()"><i class="fa fa-copy"></i> 复制</button>
         </div>
       </div>
-      <div class="box-body" style="padding:0; max-height:calc(100vh - 120px); overflow:auto; background:#f6f8fa !important;">
+      <div class="box-body" style="padding:0; max-height:calc(100vh - 120px); overflow:auto; background:#eaedf1 !important;">
         <div id="codePanel" class="km-code-panel" style="display:none;">
-          <table class="km-code-table" style="width:100%; border-collapse:collapse; font-family:'Fira Code',Consolas,monospace; font-size:13px; line-height:1.6;">
+          <table class="km-code-table" style="width:100%; border-collapse:collapse; font-family:'Fira Code',Consolas,monospace; font-size:13px; line-height:1.35;">
             <tbody id="codeBody"></tbody>
           </table>
         </div>
@@ -60,8 +60,8 @@
 <style>
 /* ── 文件树 ── */
 .km-file-tree { user-select:none; }
-.km-tree-item { padding:3px 8px; cursor:pointer; white-space:nowrap; border-radius:3px; font-size:13px; }
-.km-tree-item:hover { background:rgba(0,0,0,0.06); }
+.km-tree-item { padding:4px 8px; cursor:pointer; white-space:nowrap; border-radius:3px; font-size:13px; color:#333; }
+.km-tree-item:hover { background:rgba(0,0,0,0.08); color:#111; }
 .km-tree-item.active { background:#337ab7; color:#fff; }
 .km-tree-item .fa { width:16px; text-align:center; margin-right:4px; font-size:12px; }
 .km-tree-item .km-tree-chevron { width:14px; display:inline-block; text-align:center; margin-right:2px; font-size:10px; color:#999; transition:transform 0.15s; }
@@ -70,9 +70,9 @@
 .km-tree-children.open { display:block; }
 .km-tree-hidden { display:none !important; }
 
-/* ── 代码面板（浅色） ── */
-.km-code-panel { font-family:'Fira Code',Consolas,'Courier New',monospace; font-size:13px; line-height:1.5; }
-.km-code-table { width:100%; border-collapse:collapse; background:#f6f8fa; color:#24292e; }
+/* ── 代码面板（浅灰） ── */
+.km-code-panel { font-family:'Fira Code',Consolas,'Courier New',monospace; font-size:13px; line-height:1.35; }
+.km-code-table { width:100%; border-collapse:collapse; background:#eaedf1; color:#24292e; }
 .km-code-table tr { border:none !important; }
 .km-code-table td { padding:0 12px; vertical-align:top; border:none !important; }
 .km-code-line-num { width:50px; min-width:50px; text-align:right; color:#959da5; user-select:none; cursor:pointer; padding-right:10px !important; font-size:12px; }
@@ -431,7 +431,7 @@ $(document).ready(function() {
   $("#projects").find("ul").css("display","block");
 
   if (!source_root) {
-    $('#fileTree').html('<li style="color:#999;padding:8px;">暂无源码目录</li>');
+    $('#fileTree').html('<li style="color:#d9534f;padding:12px 8px;font-size:13px;font-weight:bold;"><i class="fa fa-exclamation-circle"></i> 暂无源码目录</li>');
     return;
   }
   loadRoot();

@@ -50,10 +50,10 @@ class ProjectFilesApiView(View):
                 return JsonResponse({"entries": []})
 
         base = os.path.normpath(root)
-        target = os.path.normpath(os.path.join(root, req_dir)) if req_dir else base
+        target = os.path.normpath(os.path.join(root, req_dir.replace('/', os.sep))) if req_dir else base
 
-        # 路径遍历防护
-        if not (target == base or target.startswith(base + os.sep)):
+        # 路径遍历防护（兼容 / 和 os.sep）
+        if not (target == base or target.startswith(base + os.sep) or target.startswith(base + '/')):
             return JsonResponse({"error": "forbidden"}, status=403)
         if not os.path.isdir(target):
             return JsonResponse({"entries": []})
@@ -99,12 +99,12 @@ class ProjectFileContentApiView(View):
             task = ScanTask.objects.filter(project_id=project_id).order_by('-id').first()
             root = (task.source_dir or task.target_path or '') if task else ''
 
-        abs_path = os.path.normpath(os.path.join(root, req_file)) if root and req_file else ''
+        abs_path = os.path.normpath(os.path.join(root, req_file.replace('/', os.sep))) if root and req_file else ''
         base = os.path.normpath(root) if root else ''
 
         if not abs_path or not base:
             return JsonResponse({"error": "no source"}, status=404)
-        if not (abs_path == base or abs_path.startswith(base + os.sep)):
+        if not (abs_path == base or abs_path.startswith(base + os.sep) or abs_path.startswith(base + '/')):
             return JsonResponse({"error": "forbidden"}, status=403)
         if not os.path.isfile(abs_path):
             return JsonResponse({"error": "not found"}, status=404)
