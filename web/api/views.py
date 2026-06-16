@@ -12,11 +12,13 @@ import json
 from django.core import serializers
 from django.shortcuts import render, redirect, HttpResponse
 from django.http import HttpResponseRedirect, JsonResponse
+from django.contrib.auth.decorators import login_required
 
 from web.index.controller import login_or_token_required, api_token_required
 from django.views.generic import TemplateView
 from django.views import View
 from django.db.models import Count
+from django.utils import timezone
 
 from web.index.models import ScanTask, VendorVulns, Rules, Tampers, NewEvilFunc, Project, ProjectVendors, ScanResultTask
 from web.index.models import get_and_check_scantask_project_id, get_resultflow_class, get_and_check_scanresult
@@ -334,3 +336,136 @@ class VendorVulStatisticsApiView(View):
                     vn['low'] += 1
 
         return JsonResponse({"code": 200, "status": True, "message":  vn_list})
+
+
+class TaskLogTailApiView(View):
+    """实时获取扫描日志尾部"""
+
+    @staticmethod
+    @login_or_token_required
+    def get(request, task_id):
+        task = ScanTask.objects.filter(id=task_id).first()
+        if not task:
+            return JsonResponse({"code": 404, "status": False, "message": "Task not found."})
+
+        log_path = os.path.join(LOGS_PATH, "ScanTask_{}.log".format(task_id))
+        if not os.path.exists(log_path):
+            return JsonResponse({"code": 200, "data": [], "finished": task.is_finished != 2})
+
+        lines = []
+        try:
+            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+                lines = f.readlines()
+        except Exception:
+            pass
+
+        return JsonResponse({"code": 200, "data": [l.rstrip() for l in lines[-300:]], "finished": task.is_finished != 2})
+
+
+class TaskCancelApiView(View):
+    """取消运行中的任务"""
+
+    @staticmethod
+    @login_or_token_required
+    def post(request, task_id):
+        task = ScanTask.objects.filter(id=task_id).first()
+        if not task:
+            return JsonResponse({"code": 404, "message": "Task not found."})
+
+        if task.is_finished != 2:
+            return JsonResponse({"code": 400, "message": "Task is not running."})
+
+        # 尝试终止进程
+        if task.pid:
+            try:
+                os.kill(task.pid, 9)
+            except (OSError, ProcessLookupError):
+                pass
+
+        ScanTask.objects.filter(id=task.id).update(
+            is_finished=0, finished_at=timezone.now(),
+            exit_code=-1, error_message="Cancelled by user.", pid=None
+        )
+        return JsonResponse({"code": 200, "message": "Task cancelled."})
+
+
+class TaskRetryApiView(View):
+    """重试失败的任务"""
+
+    @staticmethod
+    @login_or_token_required
+    def post(request, task_id):
+        task = ScanTask.objects.filter(id=task_id).first()
+        if not task:
+            return JsonResponse({"code": 404, "message": "Task not found."})
+
+        if task.is_finished not in (0, 1):
+            return JsonResponse({"code": 400, "message": "Only failed/success tasks can be retried."})
+
+        ScanTask.objects.filter(id=task.id).update(
+            is_finished=3, started_at=None, finished_at=None,
+            exit_code=None, error_message=None, pid=None
+        )
+        return JsonResponse({"code": 200, "message": "Task queued for retry."})
+
+
+class StatsApiView(View):
+    """仪表盘统计数据"""
+
+    @staticmethod
+    @login_required
+    def get(request):
+        from django.db.models import Count
+        from web.index.models import ScanResultTask, Rules, ScanTask
+
+        # 漏洞按语言分布
+        lang_dist = list(
+            ScanResultTask.objects.filter(is_active=1)
+            .values('language').annotate(count=Count('id'))
+            .order_by('-count')
+        )
+
+        # 漏洞按等级分布 — 通过 join Rules 获取 level
+        level_map = {0: '信息', 1: '低危', 2: '低危', 3: '中危', 4: '中危', 5: '高危', 6: '高危', 7: '高危', 8: '高危', 9: '高危', 10: '严重'}
+        rules = {str(r.svid): r.level for r in Rules.objects.all()}
+        vuls = ScanResultTask.objects.filter(is_active=1).only('cvi_id')
+        level_dist = {'高危': 0, '中危': 0, '低危': 0, '信息': 0}
+        for v in vuls:
+            lv = rules.get(v.cvi_id, 5)
+            level_name = level_map.get(lv, '中危')
+            level_dist[level_name] = level_dist.get(level_name, 0) + 1
+
+        # 任务状态分布
+        tasks = ScanTask.objects.all()
+        task_status = {
+            'success': tasks.filter(is_finished=1).count(),
+            'running': tasks.filter(is_finished=2).count(),
+            'failed': tasks.filter(is_finished=0).count(),
+            'pending': tasks.filter(is_finished=3).count(),
+        }
+
+        # 最近 7 天扫描量
+        from django.db.models.functions import TruncDate
+        from django.utils import timezone as tz
+        seven_days_ago = tz.now() - tz.timedelta(days=7)
+        daily_tasks = list(
+            tasks.filter(created_at__gte=seven_days_ago)
+            .annotate(date=TruncDate('created_at'))
+            .values('date').annotate(count=Count('id'))
+            .order_by('date')
+        )
+        # 补齐空白天数
+        daily_map = {str(d['date']): d['count'] for d in daily_tasks}
+        for i in range(7):
+            d = (seven_days_ago + tz.timedelta(days=i)).strftime('%Y-%m-%d')
+            if d not in daily_map:
+                daily_tasks.append({'date': d, 'count': 0})
+        daily_tasks.sort(key=lambda x: str(x['date']))
+
+        return JsonResponse({
+            "code": 200,
+            "lang_dist": lang_dist,
+            "level_dist": level_dist,
+            "task_status": task_status,
+            "daily_tasks": daily_tasks,
+        })

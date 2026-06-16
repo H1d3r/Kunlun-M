@@ -279,10 +279,11 @@ class RuleCheck:
             unmatch = ruleclass.unmatch
             keyword = ruleclass.keyword
 
+        match = getattr(ruleclass, 'match', '') or ''
         r = Rules(rule_name=ruleclass.vulnerability, svid=ruleclass.svid,
                   language=ruleclass.language.lower(), author=ruleclass.author,
                   description=ruleclass.description, level=ruleclass.level, status=ruleclass.status,
-                  match_mode=ruleclass.match_mode, match=ruleclass.match,
+                  match_mode=ruleclass.match_mode, match=match,
                   match_name=match_name, black_list=black_list, unmatch=unmatch, keyword=keyword,
                   vul_function=ruleclass.vul_function, main_function=main_function_content)
 
@@ -463,55 +464,110 @@ class TamperCheck:
         return True
 
     def load(self):
+        """
+        加载 tamper 文件到数据库。
+        扫描 rules/tamper/<language>/<framework>.py 子目录结构。
+        """
+        language_dirs = [d for d in os.listdir(self.tamper_base_path)
+                         if os.path.isdir(os.path.join(self.tamper_base_path, d))
+                         and not d.startswith('_') and d != '__pycache__']
 
-        self.tamper_list = list_parse(self.tamper_base_path, True)
+        for lang in sorted(language_dirs):
+            lang_dir = os.path.join(self.tamper_base_path, lang)
+            if not os.path.isdir(lang_dir):
+                continue
 
-        for tamper in self.tamper_list:
-            tamper_name = tamper.split('.')[0]
-            tamper_file = "rules.tamper." + tamper_name
+            for fname in sorted(os.listdir(lang_dir)):
+                if not fname.endswith('.py') or fname.startswith('_'):
+                    continue
 
-            tamper_obj = __import__(tamper_file, fromlist=tamper_name)
+                tamper_name = fname[:-3]
+                module_path = "rules.tamper.{}.{}".format(lang, tamper_name)
 
-            filter_func = getattr(tamper_obj, tamper_name)
-            input_control = getattr(tamper_obj, tamper_name + "_controlled")
+                try:
+                    tamper_obj = __import__(module_path, fromlist=[tamper_name])
+                except Exception as e:
+                    logger.warning("[INIT][Load Tamper] Failed to import {}: {}".format(module_path, e))
+                    continue
 
-            if filter_func:
-                for function in filter_func:
-                    t = Tampers.objects.filter(tam_name=tamper_name, tam_type="Filter-Function",
-                                               tam_key=function).first()
+                filter_func = getattr(tamper_obj, 'FILTER_FUNCTIONS', None)
+                controlled_sources = getattr(tamper_obj, 'CONTROLLED_SOURCES', None)
+                extra_sinks = getattr(tamper_obj, 'EXTRA_SINKS', None)
 
-                    if not t:
-                        logger.info("[INIT][Load Tamper] New Tamper for {} function {}.".format(tamper_name, function))
+                if filter_func:
+                    for func_name, func_value in filter_func.items():
+                        self._upsert_tamper(tamper_name, "Filter-Function", func_name, func_value)
 
-                        t1 = Tampers(tam_name=tamper_name, tam_type="Filter-Function",
-                                     tam_key=function, tam_value=filter_func[function])
+                if controlled_sources:
+                    for source in controlled_sources:
+                        self._upsert_tamper(tamper_name, "Controlled-Sources", tamper_name, source)
 
-                        t1.save()
+                if extra_sinks:
+                    for sink_name, svids in extra_sinks:
+                        self._upsert_tamper(tamper_name, "Extra-Sinks", sink_name, svids)
 
-                    else:
-                        logger.debug("[INIT][Load Tamper] Check Tamper for {} function {}.".format(tamper_name, function))
+        # 兼容：扫描根目录旧版 tamper 文件（扁平目录结构）
+        try:
+            from rules.tamper._compat import scan_legacy_tampers, wrap_legacy_module
+            legacy_list = scan_legacy_tampers(self.tamper_base_path)
+            for mod, tamper_name, lang, filepath in legacy_list:
+                wrapped = wrap_legacy_module(mod, tamper_name, lang, filepath)
+                filter_func = getattr(wrapped, 'FILTER_FUNCTIONS', None)
+                controlled_sources = getattr(wrapped, 'CONTROLLED_SOURCES', None)
+                extra_sinks = getattr(wrapped, 'EXTRA_SINKS', None)
 
-                        self.check_and_update_tamper(t, filter_func[function])
+                if filter_func:
+                    for func_name, func_value in filter_func.items():
+                        self._upsert_tamper(tamper_name, "Filter-Function", func_name, func_value)
 
-            if input_control:
-                for input in input_control:
-                    t = Tampers.objects.filter(tam_name=tamper_name, tam_type="Input-Control",
-                                               tam_key=tamper_name, tam_value=input).first()
+                if controlled_sources:
+                    for source in controlled_sources:
+                        self._upsert_tamper(tamper_name, "Controlled-Sources", tamper_name, source)
 
-                    if not t:
-                        logger.info("[INIT][Load Tamper] New Tamper for {} Input {}.".format(tamper_name, input))
+                if extra_sinks:
+                    for sink_name, svids in extra_sinks:
+                        self._upsert_tamper(tamper_name, "Extra-Sinks", sink_name, svids)
+        except Exception as e:
+            logger.warning("[INIT][Load Tamper] Legacy tamper scan error: {}".format(e))
 
-                        t1 = Tampers(tam_name=tamper_name, tam_type="Input-Control",
-                                     tam_key=tamper_name, tam_value=input)
-
-                        t1.save()
-
-                    else:
-                        logger.debug("[INIT][Load Tamper] Check Tamper for {} Input {}.".format(tamper_name, input))
-
-                        self.check_and_update_tamper(t, input)
+        # 清理：删除文件系统中已不存在的 tamper 旧记录
+        try:
+            from rules.tamper._compat import scan_legacy_tampers as _scan_legacy
+            active_names = set()
+            # 收集新版 tamper 名称
+            for lang in language_dirs:
+                lang_dir = os.path.join(self.tamper_base_path, lang)
+                if not os.path.isdir(lang_dir):
+                    continue
+                for fname in os.listdir(lang_dir):
+                    if fname.endswith('.py') and not fname.startswith('_'):
+                        active_names.add(fname[:-3])
+            # 收集旧版 tamper 名称
+            for _, name, _, _ in _scan_legacy(self.tamper_base_path):
+                active_names.add(name)
+            # 删除不活跃的 tamper 记录
+            stale = Tampers.objects.exclude(tam_name__in=active_names)
+            stale_count = stale.count()
+            if stale_count > 0:
+                logger.info("[INIT][Load Tamper] Cleaning {} stale records for removed tampers".format(stale_count))
+                stale.delete()
+        except Exception as e:
+            logger.warning("[INIT][Load Tamper] Stale record cleanup error: {}".format(e))
 
         return True
+
+    def _upsert_tamper(self, tam_name, tam_type, tam_key, tam_value):
+        """通用 upsert：存在则检查更新，不存在则创建"""
+        t = Tampers.objects.filter(tam_name=tam_name, tam_type=tam_type, tam_key=tam_key).first()
+
+        if not t:
+            logger.info("[INIT][Load Tamper] New Tamper {} {} key={}".format(tam_name, tam_type, tam_key))
+            Tampers(tam_name=tam_name, tam_type=tam_type, tam_key=tam_key, tam_value=str(tam_value)).save()
+        else:
+            if str(t.tam_value) != str(tam_value):
+                logger.debug("[INIT][Load Tamper] Update {} {} key={}".format(tam_name, tam_type, tam_key))
+                t.tam_value = str(tam_value)
+                t.save()
 
     def recover(self):
 

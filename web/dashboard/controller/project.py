@@ -19,6 +19,7 @@ from django.http import JsonResponse, HttpResponseNotFound
 from django.views.generic import TemplateView
 from django.views import View
 from django.shortcuts import render, redirect
+from django.urls import reverse
 
 from Kunlun_M.settings import SUPER_ADMIN
 from Kunlun_M.const import VUL_LEVEL, VENDOR_VUL_LEVEL
@@ -108,10 +109,34 @@ class ProjectDetailView(View):
             task.is_finished = int(task.is_finished)
             task.parameter_config = del_sensitive_for_config(task.parameter_config)
 
+        # 加载漏洞链：用最新有结果的 task 的 ResultFlow
+        chain_map = {}
+        source_root = ''
+        finished_tasks = [t for t in tasks if int(t.is_finished) == 1]
+        for t in finished_tasks:
+            try:
+                from web.index.models import get_resultflow_class
+                RF = get_resultflow_class(t.id)
+                if RF:
+                    for rf in RF.objects.all().order_by('id'):
+                        chain_map.setdefault(rf.vul_id, []).append({
+                            'type': rf.node_type,
+                            'content': rf.node_content or '',
+                            'path': rf.node_path or '',
+                            'lineno': str(rf.node_lineno or ''),
+                            'source': rf.node_source or '',
+                        })
+                    source_root = t.source_dir or t.target_path or ''
+                    break  # 只加载最新 task 的链
+            except Exception:
+                continue
+
         for taskresult in taskresults:
             taskresult.is_unconfirm = int(taskresult.is_unconfirm)
             taskresult.level = 0
             taskresult.vid = 0
+            taskresult.chain_nodes = chain_map.get(taskresult.id, [])
+            taskresult.has_chain = len(taskresult.chain_nodes) > 0
 
             if taskresult.cvi_id == '9999':
                 vender_vul_id = taskresult.vulfile_path.split(":")[-1]
@@ -141,11 +166,21 @@ class ProjectDetailView(View):
         if not project:
             return HttpResponseNotFound('Project Not Found.')
         else:
+            # 构建 chain JSON 供前端使用
+            chain_json_map = {}
+            for tr in taskresults:
+                if tr.has_chain:
+                    chain_json_map[str(tr.id)] = tr.chain_nodes
+            import json as _json
+            chain_json = _json.dumps(chain_json_map, ensure_ascii=False)
+
             data = {
                 'tasks': tasks,
                 'taskresults': taskresults,
                 'newevilfuncs': newevilfuncs,
                 'project': project,
                 'project_vendors': pvs,
+                'source_root': source_root,
+                'chain_json': chain_json,
             }
             return render(request, 'dashboard/projects/project_detail.html', data)

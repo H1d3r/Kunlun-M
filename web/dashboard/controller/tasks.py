@@ -75,7 +75,13 @@ class TaskListView(TemplateView):
 class TaskNewView(View):
     def get(self, request):
         max_mb = int(getattr(settings, "WEB_UPLOAD_MAX_MB", 50))
-        return render(request, "dashboard/tasks/task_upload.html", {"error_message": "", "max_mb": max_mb})
+        allowed_paths = getattr(settings, "WEB_SCAN_ALLOWED_PATHS", [])
+        path_scan_disabled = not bool(allowed_paths)
+        return render(request, "dashboard/tasks/task_upload.html", {
+            "error_message": "",
+            "max_mb": max_mb,
+            "path_scan_disabled": path_scan_disabled,
+        })
 
     def post(self, request):
         if "archive" not in request.FILES:
@@ -209,12 +215,16 @@ class TaskConfigView(View):
         project_des = project.project_des if project and project.project_des else ""
         vendor_globally_off = not bool(getattr(settings, "WITH_VENDOR", False))
 
+        # 获取可用 tamper 列表供下拉选择
+        tamper_names = list(Tampers.objects.values_list('tam_name', flat=True).distinct().order_by('tam_name'))
+
         data = {
             "task": task,
             "options": options,
             "archive_name": archive_name,
             "project_des": project_des,
             "vendor_globally_off": vendor_globally_off,
+            "tamper_names": tamper_names,
             "error_message": "",
         }
         return render(request, "dashboard/tasks/task_config.html", data)
@@ -249,7 +259,8 @@ class TaskConfigView(View):
         task.is_finished = 3
         task.save()
 
-        check_and_new_project_id(task.id, task_name, "Upload", project_des=project_des)
+        origin_label = {"upload": "Upload", "path": "Local"}.get(task.source_type, "Unknown")
+        check_and_new_project_id(task.id, task_name, origin_label, project_des=project_des)
 
         from web.index.scan_dispatcher import try_dispatch
         try_dispatch()
@@ -275,12 +286,35 @@ class TaskDetailView(View):
         taskresults = get_and_check_scanresult(task.id).objects.filter(scan_project_id=project_id, is_active=1).all()
         newevilfuncs = get_and_check_evil_func(task.id)
 
+        # 加载漏洞链数据
+        chain_map = {}
+        try:
+            from web.index.models import get_resultflow_class
+            RF = get_resultflow_class(task.id)
+            if RF:
+                for rf in RF.objects.all().order_by('id'):
+                    chain_map.setdefault(rf.vul_id, []).append({
+                        'type': rf.node_type,
+                        'content': rf.node_content or '',
+                        'path': rf.node_path or '',
+                        'lineno': str(rf.node_lineno or ''),
+                        'source': rf.node_source or '',
+                    })
+        except Exception as e:
+            import logging
+            logging.getLogger('django').warning('[chain] load chain data failed: %s', e)
+
         task.is_finished = int(task.is_finished)
         task.parameter_config = del_sensitive_for_config(task.parameter_config)
+
+        # 确定 source_root 用于路径截断
+        source_root = task.source_dir or task.target_path or ''
 
         for taskresult in taskresults:
             taskresult.is_unconfirm = int(taskresult.is_unconfirm)
             taskresult.level = 0
+            taskresult.chain_nodes = chain_map.get(taskresult.id, [])
+            taskresult.has_chain = len(taskresult.chain_nodes) > 0
 
             if taskresult.cvi_id == '9999':
                 vender_vul_id = taskresult.vulfile_path.split(":")[-1]
@@ -308,6 +342,14 @@ class TaskDetailView(View):
                 r = Rules.objects.filter(svid=taskresult.cvi_id).first()
                 taskresult.level = VUL_LEVEL[r.level]
 
+        # 构建 chain JSON 供前端使用
+        chain_json_map = {}
+        for tr in taskresults:
+            if tr.has_chain:
+                chain_json_map[str(tr.id)] = tr.chain_nodes
+        import json as _json
+        chain_json = _json.dumps(chain_json_map, ensure_ascii=False)
+
         if not task:
             return HttpResponseNotFound('Task Not Found.')
         else:
@@ -317,5 +359,77 @@ class TaskDetailView(View):
                 'newevilfuncs': newevilfuncs,
                 'visit_token': visit_token,
                 'project': project,
+                'source_root': source_root,
+                'chain_json': chain_json,
             }
             return render(request, 'dashboard/tasks/task_detail.html', data)
+
+
+class TaskPathView(View):
+    """通过服务器本地路径创建扫描任务"""
+
+    def post(self, request):
+        allowed_paths = getattr(settings, "WEB_SCAN_ALLOWED_PATHS", [])
+        if not allowed_paths:
+            return render(request, "dashboard/tasks/task_upload.html", {
+                "error_message": "",
+                "max_mb": int(getattr(settings, "WEB_UPLOAD_MAX_MB", 50)),
+                "path_scan_disabled": True,
+                "path_error": "本地路径扫描未启用。请在 settings.py 中配置 WEB_SCAN_ALLOWED_PATHS。",
+            })
+
+        target_path = (request.POST.get("target_path", "") or "").strip()
+        if not target_path:
+            return render(request, "dashboard/tasks/task_upload.html", {
+                "error_message": "",
+                "max_mb": int(getattr(settings, "WEB_UPLOAD_MAX_MB", 50)),
+                "path_scan_disabled": False,
+                "path_error": "请输入项目路径",
+                "submitted_path": target_path,
+            })
+
+        target_path = os.path.abspath(os.path.expanduser(target_path))
+
+        if not os.path.isdir(target_path):
+            return render(request, "dashboard/tasks/task_upload.html", {
+                "error_message": "",
+                "max_mb": int(getattr(settings, "WEB_UPLOAD_MAX_MB", 50)),
+                "path_scan_disabled": False,
+                "path_error": "路径不存在或不是目录: {}".format(target_path),
+                "submitted_path": request.POST.get("target_path", ""),
+            })
+
+        if "*" not in allowed_paths:
+            real_path = os.path.realpath(target_path)
+            matched = False
+            for allowed_dir in allowed_paths:
+                real_allowed = os.path.realpath(os.path.abspath(allowed_dir))
+                if real_path == real_allowed or real_path.startswith(real_allowed + os.sep):
+                    matched = True
+                    break
+            if not matched:
+                return render(request, "dashboard/tasks/task_upload.html", {
+                    "error_message": "",
+                    "max_mb": int(getattr(settings, "WEB_UPLOAD_MAX_MB", 50)),
+                    "path_scan_disabled": False,
+                    "path_error": "路径不在允许的扫描范围内。允许的目录: {}".format(", ".join(allowed_paths)),
+                    "submitted_path": request.POST.get("target_path", ""),
+                })
+
+        task_name = (request.POST.get("task_name", "") or "").strip()
+        if not task_name:
+            task_name = os.path.basename(target_path.rstrip(os.sep)) or "unnamed"
+
+        task = ScanTask(
+            task_name=task_name,
+            target_path=target_path,
+            parameter_config=repr(["web", "path", target_path]),
+            is_finished=3,
+            source_type="path",
+            options_json=json.dumps({}, ensure_ascii=False),
+            created_at=timezone.now(),
+            last_scan_time=timezone.now(),
+        )
+        task.save()
+
+        return redirect("dashboard:task_config", task_id=task.id)

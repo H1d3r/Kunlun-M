@@ -9,7 +9,7 @@ from django.urls import path
 from django.contrib.auth.decorators import login_required
 
 from web.dashboard import views
-from web.dashboard.controller import tasks, rules, tampers, project, vendor
+from web.dashboard.controller import tasks, rules, tampers, project, vendor, files
 from web.dashboard.interface import scanresult
 
 app_name = "dashboard"
@@ -20,19 +20,25 @@ urlpatterns = [
     path('tasks/list', login_required(tasks.TaskListView.as_view()), name='tasks_list'),
     path('tasks/detail/<int:task_id>', tasks.TaskDetailView.as_view(), name="task_detail"),
     path('tasks/new', login_required(tasks.TaskNewView.as_view()), name="task_new"),
+    path('tasks/path/', login_required(tasks.TaskPathView.as_view()), name='task_path'),
     path('tasks/config/<int:task_id>', login_required(tasks.TaskConfigView.as_view()), name="task_config"),
 
     # projects
     path('projects/list', login_required(project.ProjectListView.as_view()), name='projects_list'),
     path('projects/detail/<int:project_id>', project.ProjectDetailView.as_view(), name="project_detail"),
+    path('projects/<int:project_id>/files', login_required(files.ProjectFilesView.as_view()), name='project_files'),
+    path('projects/<int:project_id>/files/api', files.ProjectFilesApiView.as_view(), name='project_files_api'),
+    path('projects/<int:project_id>/files/content', files.ProjectFileContentApiView.as_view(), name='project_files_content'),
 
     # rule
     path('rules/list', login_required(rules.RuleListView.as_view()), name='rules_list'),
     path('rules/detail/<int:rule_id>', rules.RuleDetailView.as_view(), name="rule_detail"),
+    path('rules/source/<int:rule_id>', rules.RuleSourceJsonView.as_view(), name="rule_source"),
 
     # tamper
     path('tampers/list', login_required(tampers.TamperListView.as_view()), name='tampers_list'),
-    path('tampers/detail/<int:tamper_id>', tampers.TamperDetailView.as_view(), name="tamper_detail"),
+    path('tampers/detail/<tamper_id>', tampers.TamperDetailView.as_view(), name="tamper_detail"),
+    path('tampers/sources', tampers.TamperSourceJsonView.as_view(), name="tamper_sources"),
 
     # vendor
     path('vendors/search', login_required(vendor.VendorDetailView.as_view()), name='vendor_details'),
@@ -50,6 +56,9 @@ urlpatterns = [
 
     # user
     path("userinfo", views.userinfo, name="userinfo"),
+    path('user/token/create', views.userinfo_token_create, name='userinfo_token_create'),
+    path('user/token/delete/<int:token_id>', views.userinfo_token_delete, name='userinfo_token_delete'),
+    path("tasks/<int:task_id>/code", views.code_view, name='task_code_view'),
     path("overview", views.overview, name="overview"),
 
     # interface

@@ -213,6 +213,20 @@ def main():
 
         if hasattr(args, "port"):
             logger.info('Start KunLun-M Web in Port: {}'.format(args.port))
+            # 自动执行数据库迁移，确保新增 model 字段在启动时生效
+            try:
+                call_command('migrate', verbosity=0)
+                logger.info('[INIT] Database migration applied.')
+            except Exception as e:
+                logger.warning('[INIT] Database migration failed: {}'.format(e))
+            # 自动同步规则和 tamper 到数据库
+            logger.debug('[INIT] Syncing rules and tampers...')
+            try:
+                RuleCheck().load()
+                TamperCheck().load()
+                logger.info('[INIT] Rule/Tamper sync finished.')
+            except Exception as e:
+                logger.warning('[INIT] Rule/Tamper sync skipped: {}'.format(e))
             call_command('runserver', args.port)
 
         if hasattr(args, "load"):

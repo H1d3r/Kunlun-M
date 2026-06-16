@@ -6,11 +6,14 @@
         <div class="col-xs-12">
           <div class="box">
             <div class="box-header">
-              <h3 class="box-title">依赖漏洞列表</h3>
+              <h3 class="box-title">组件漏洞列表</h3>
+              <div class="box-tools pull-right">
+                <input type="text" id="vulnSearch" class="form-control input-sm pull-right" style="width:200px;" placeholder="搜索 CVE/标题/依赖名...">
+              </div>
             </div>
             <!-- /.box-header -->
             <div class="box-body table-responsive no-padding">
-              <table class="table table-hover km-table km-table-wide">
+              <table class="table table-hover km-table km-table-wide" id="vulnTable">
                 <thead>
                   <tr>
                     <th class="km-col-id">ID</th>
@@ -75,6 +78,13 @@
           $("#vendors").addClass("menu-open");
           $("#vendors").find("ul").find("li#vendor_vulns_list").addClass("active");
           $("#vendors").find("ul").css("display","block");
+
+          $("#vulnSearch").on("input", function(){
+            var q = $(this).val().toLowerCase().trim();
+            $("#vulnTable tbody tr").each(function(){
+              $(this).toggle(!q || $(this).text().toLowerCase().indexOf(q) >= 0);
+            });
+          });
       });
 </script>
 

@@ -1,4 +1,5 @@
 {% extends "dashboard/base.html" %}
+{% load static %}
 {% load tz %}
 {% block title %}项目详情{% endblock %}
 
@@ -9,6 +10,9 @@
 <div class="box-header with-border
 ">
   <h3 class="box-title">项目详情</h3>
+  <div class="box-tools pull-right">
+    <a class="btn btn-sm btn-primary" href="{% url 'dashboard:project_files' project.id %}"><i class="fa fa-code"></i> 源码浏览</a>
+  </div>
 </div>
 <div class="box-body">
   <!-- Date -->
@@ -126,7 +130,7 @@
                       {% if taskresult.cvi_id == '9999' %}
                         <div class="km-cell-title"><a class="km-link-strong" href="{% url 'dashboard:vendor_vulns_details' taskresult.vid %}" title="{{ taskresult.vulfile_path|escape }}">{{ taskresult.vulfile_path }}</a></div>
                       {% else %}
-                        <div class="km-cell-config" title="{{ taskresult.vulfile_path|escape }}">{{ taskresult.vulfile_path }}</div>
+                        <a class="km-link-strong" href="{% url 'dashboard:project_files' project.id %}?file={{ taskresult.vulfile_path|urlencode }}" title="{{ taskresult.vulfile_path|escape }}">{{ taskresult.vulfile_path }}</a>
                       {% endif %}
                     </td>
 
@@ -151,8 +155,11 @@
                       <span class="label label-success">{{ taskresult.is_unconfirm }}</span>
                       {% endif %}
                     </td>
-                    <td class="km-td-actions">
+                    <td class="km-col-actions">
                       <div class="km-actions">
+                        {% if taskresult.has_chain %}
+                        <button type="button" class="btn btn-xs btn-chain" data-vul-id="{{ taskresult.id }}" onclick="toggleChainPanel(this)" title="查看传播链"><i class="fa fa-sitemap"></i></button>
+                        {% endif %}
                         <button type="button" class="btn btn-danger btn-xs" onclick="delVul('{{ taskresult.id }}')">删除</button>
                       </div>
                     </td>
@@ -160,6 +167,12 @@
                   {% endfor %}
                 </tbody>
               </table>
+    </div>
+
+    <!-- 漏洞链面板 -->
+    <div id="chainPanel" class="km-chain-panel" style="display:none">
+      <div class="km-chain-sidebar" id="chainSidebar"></div>
+      <div class="km-chain-code" id="chainCode"></div>
     </div>
 
     {% csrf_token %}
@@ -247,6 +260,12 @@
 {% endblock %}
 
 {% block script %}
+
+<link rel="stylesheet" href="{% static 'css/chain-panel.css' %}">
+<script src="{% static 'js/chain-panel.js' %}"></script>
+<script>
+var chainDataMap = {{ chain_json|safe }};
+</script>
 
 <script>
 

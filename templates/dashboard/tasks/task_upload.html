@@ -2,35 +2,94 @@
 {% block title %}新建扫描{% endblock %}
 
 {% block body %}
+<style>
+.km-tabs-header { display: flex; gap: 0; border-bottom: 2px solid #e5e7eb; margin-bottom: 18px; }
+.km-tab { padding: 10px 22px; border: none; border-bottom: 3px solid transparent; cursor: pointer; background: none; font-size: 14px; color: #6b7280; transition: all 0.2s; margin-bottom: -2px; }
+.km-tab:hover { color: #374151; }
+.km-tab.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
+.km-tab:disabled { opacity: 0.45; cursor: not-allowed; }
+.km-tab-pane { display: none; }
+.km-tab-pane.active { display: block; }
+</style>
+
 <div class="row">
   <div class="col-xs-12 col-md-10 col-md-offset-1 col-lg-8 col-lg-offset-2">
     <div class="box box-primary">
       <div class="box-header with-border">
-        <h3 class="box-title">上传项目压缩包</h3>
+        <h3 class="box-title">新建扫描</h3>
       </div>
 
-      <form id="uploadForm" method="post" enctype="multipart/form-data">
-        {% csrf_token %}
-        <div class="box-body" style="padding: 26px 28px 30px;">
-          {% if error_message %}
-          <div class="alert alert-danger">{{ error_message }}</div>
+      <div class="box-body" style="padding: 26px 28px 30px;">
+        <div class="km-tabs-header">
+          <button class="km-tab active" data-target="tab-upload">
+            <i class="fa fa-cloud-upload"></i> 上传文件
+          </button>
+          <button class="km-tab" data-target="tab-path" {% if path_scan_disabled %}disabled title="本地路径扫描未启用"{% endif %}>
+            <i class="fa fa-folder-open"></i> 本地路径
+          </button>
+        </div>
+
+        <!-- Tab 1: 上传文件 -->
+        <div class="km-tab-pane active" id="tab-upload">
+          {% if error_message and not path_error %}
+          <div class="alert alert-danger" style="margin-bottom: 16px;">{{ error_message }}</div>
           {% endif %}
 
-          <div style="color:#6b7280; margin-bottom:10px;">拖入或点击选择文件后将自动上传并进入配置页面</div>
+          <form id="uploadForm" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div style="color:#6b7280; margin-bottom:10px;">拖入或点击选择文件后将自动上传并进入配置页面</div>
 
-          <div id="dropzone" class="well" style="border: 2px dashed #8da2bf; background: linear-gradient(180deg, #fafcff 0%, #f4f8ff 100%); padding: 38px 24px; text-align: center; cursor: pointer; border-radius: 12px; margin-bottom: 12px;">
-            <div style="font-size: 34px; color:#4b6ea9; line-height: 1; margin-bottom: 14px;">
-              <i class="fa fa-cloud-upload"></i>
+            <div id="dropzone" class="well" style="border: 2px dashed #8da2bf; background: linear-gradient(180deg, #fafcff 0%, #f4f8ff 100%); padding: 38px 24px; text-align: center; cursor: pointer; border-radius: 12px; margin-bottom: 12px;">
+              <div style="font-size: 34px; color:#4b6ea9; line-height: 1; margin-bottom: 14px;">
+                <i class="fa fa-cloud-upload"></i>
+              </div>
+              <div style="font-size: 17px; color:#1f2a39; margin-bottom: 8px;">将 zip 文件拖到这里，或点击选择文件</div>
+              <div style="color: #64748b;">支持：`.zip`（最大 {{ max_mb }}MB）</div>
+              <div id="fileName" style="margin-top: 14px; color: #2f4c7f; font-weight: 600;"></div>
             </div>
-            <div style="font-size: 17px; color:#1f2a39; margin-bottom: 8px;">将 zip 文件拖到这里，或点击选择文件</div>
-            <div style="color: #64748b;">支持：`.zip`（最大 {{ max_mb }}MB）</div>
-            <div id="fileName" style="margin-top: 14px; color: #2f4c7f; font-weight: 600;"></div>
-          </div>
 
-          <div id="uploadStatus" style="min-height: 22px; color:#64748b;"></div>
-          <input id="archiveInput" type="file" name="archive" accept=".zip" style="display:none" required>
+            <div id="uploadStatus" style="min-height: 22px; color:#64748b;"></div>
+            <input id="archiveInput" type="file" name="archive" accept=".zip" style="display:none" required>
+          </form>
         </div>
-      </form>
+
+        <!-- Tab 2: 本地路径 -->
+        <div class="km-tab-pane" id="tab-path">
+          {% if path_scan_disabled %}
+          <div class="alert alert-warning" style="margin-bottom: 16px;">
+            <i class="fa fa-exclamation-triangle"></i>
+            本地路径扫描未启用。如需使用，请在 <code>settings.py</code> 中配置 <code>WEB_SCAN_ALLOWED_PATHS</code>。
+          </div>
+          {% endif %}
+
+          {% if path_error %}
+          <div class="alert alert-danger" style="margin-bottom: 16px;">{{ path_error }}</div>
+          {% endif %}
+
+          <form id="pathForm" method="post" action="{% url 'dashboard:task_path' %}">
+            {% csrf_token %}
+            <div class="form-group">
+              <label>项目路径 <span class="text-danger">*</span></label>
+              <input type="text" class="form-control" name="target_path" placeholder="/home/projects/myapp" {% if path_scan_disabled %}disabled{% endif %} value="{{ submitted_path|default:'' }}">
+              <p class="help-block" style="color:#6b7280;">服务器上的项目目录绝对路径</p>
+            </div>
+
+            <div class="form-group">
+              <label>任务名称（可选）</label>
+              <input type="text" class="form-control" name="task_name" placeholder="可选，默认使用路径名" {% if path_scan_disabled %}disabled{% endif %}>
+            </div>
+
+            <div class="form-group">
+              <label>项目描述（可选）</label>
+              <textarea class="form-control" rows="2" name="description" placeholder="可选" {% if path_scan_disabled %}disabled{% endif %}></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary" {% if path_scan_disabled %}disabled{% endif %}>
+              <i class="fa fa-arrow-right"></i> 创建任务并配置
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -45,6 +104,16 @@ $(document).ready(function () {
   $("#tasks").find("ul").find("li#task_new").addClass("active");
   $("#tasks").find("ul").css("display","block");
 
+  // Tab 切换
+  $('.km-tab:not(:disabled)').on('click', function () {
+    var target = $(this).data('target');
+    $('.km-tab').removeClass('active');
+    $(this).addClass('active');
+    $('.km-tab-pane').removeClass('active');
+    $('#' + target).addClass('active');
+  });
+
+  // 文件上传逻辑（保留原有）
   var dz = document.getElementById('dropzone');
   var input = document.getElementById('archiveInput');
   var nameBox = document.getElementById('fileName');
@@ -84,12 +153,12 @@ $(document).ready(function () {
 
   dz.addEventListener('dragleave', function (e) {
     e.preventDefault();
-    dz.style.background = '#fafafa';
+    dz.style.background = '#fafcff';
   });
 
   dz.addEventListener('drop', function (e) {
     e.preventDefault();
-    dz.style.background = '#fafafa';
+    dz.style.background = '#fafcff';
     if (!e.dataTransfer || !e.dataTransfer.files || !e.dataTransfer.files[0]) return;
     input.files = e.dataTransfer.files;
     setFile(e.dataTransfer.files[0]);

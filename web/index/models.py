@@ -210,6 +210,7 @@ class ScanTask(models.Model):
     last_scan_time = models.DateTimeField(default=timezone.now)
     visit_token = models.CharField(max_length=64, default=uuid.uuid4)
     is_finished = models.IntegerField(default=3)
+    pid = models.IntegerField(null=True, default=None)
 
     def save(self, *args, **kwargs):
         # 检查project存不存在，如果不存在，那么新建一个
@@ -550,3 +551,21 @@ def get_resultflow_class(scanid):
             pass
 
     return ResultflowObject
+
+
+class ApiToken(models.Model):
+    """用户 API Token，支持多 token 管理"""
+    user = models.ForeignKey('auth.User', on_delete=models.CASCADE, related_name='api_tokens')
+    name = models.CharField(max_length=100, default='', blank=True, help_text='Token 用途备注')
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'web_apitoken'
+        verbose_name = 'API Token'
+        verbose_name_plural = 'API Tokens'
+
+    def __str__(self):
+        return '{} - {}'.format(self.user.username, self.name or self.token[:12])
