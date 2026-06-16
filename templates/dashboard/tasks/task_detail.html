@@ -144,6 +144,7 @@
     <!-- 筛选条 -->
     <div style="margin-bottom:12px;" id="filterBar">
       <button class="btn btn-xs btn-default filter-btn active" data-filter="all">全部</button>
+      <button class="btn btn-xs btn-danger filter-btn" data-filter="critical">严重</button>
       <button class="btn btn-xs btn-danger filter-btn" data-filter="high">高危</button>
       <button class="btn btn-xs btn-warning filter-btn" data-filter="medium">中危</button>
       <button class="btn btn-xs btn-info filter-btn" data-filter="low">低危</button>
@@ -195,11 +196,13 @@
                     {% endif %}
 
                     <td class="km-td-nowrap">
-                      {% if taskresult.level == 'high' or taskresult.level == 'High' %}
+                      {% if taskresult.level|lower == 'critical' %}
+                      <span class="label label-danger" style="background:#a00 !important;">严重</span>
+                      {% elif taskresult.level|lower == 'high' %}
                       <span class="label label-danger">高危</span>
-                      {% elif taskresult.level == 'medium' or taskresult.level == 'Medium' %}
+                      {% elif taskresult.level|lower == 'medium' %}
                       <span class="label label-warning">中危</span>
-                      {% elif taskresult.level == 'low' or taskresult.level == 'Low' %}
+                      {% elif taskresult.level|lower == 'low' %}
                       <span class="label label-info">低危</span>
                       {% else %}
                       {{ taskresult.level }}
@@ -399,7 +402,7 @@ $(document).ready(function(){
     $(".filter-btn").removeClass("active btn-danger btn-warning btn-info").addClass("btn-default");
     var f = $(this).data('filter');
     currentFilter = f;
-    var cls = {'high':'btn-danger','medium':'btn-warning','low':'btn-info'};
+    var cls = {'critical':'btn-danger','high':'btn-danger','medium':'btn-warning','low':'btn-info'};
     $(this).removeClass('btn-default').addClass(cls[f] || 'active');
     applyFilters();
   });
