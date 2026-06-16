@@ -86,8 +86,16 @@ class TamperListView(TemplateView):
                 'ExtraSinks': [],
                 'language': language,
                 'filepath': filepath,
+                'source_code': '',
             }
             i += 1
+
+            # 读取源码
+            try:
+                with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+                    detail['source_code'] = f.read()
+            except Exception:
+                pass
 
             # 尝试从数据库补充信息
             records = db_records.get(name, [])

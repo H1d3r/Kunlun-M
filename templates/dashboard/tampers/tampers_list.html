@@ -24,19 +24,13 @@
                     <span class="label label-default">{{ detail.language }}</span>
                     {% endif %}
                   </button>
-                  <textarea id="tamperName{{ forloop.counter0 }}" class="km-tamper-source">{{ name }}</textarea>
-                  <textarea id="tamperLang{{ forloop.counter0 }}" class="km-tamper-source">{{ detail.language }}</textarea>
-                  <textarea id="tamperFilter{{ forloop.counter0 }}" class="km-tamper-source">{{ detail.FilterFunction }}</textarea>
-                  <textarea id="tamperCS{{ forloop.counter0 }}" class="km-tamper-source">{{ detail.ControlledSources }}</textarea>
-                  <textarea id="tamperES{{ forloop.counter0 }}" class="km-tamper-source">{{ detail.ExtraSinks }}</textarea>
-                  <input type="hidden" class="km-tamper-real-id" data-index="{{ forloop.counter0 }}" value="">
+                  <textarea id="tamperSource{{ forloop.counter0 }}" class="km-tamper-source">{{ detail.source_code }}</textarea>
                 {% endfor %}
               </div>
             </div>
             <div class="km-tamper-detail">
               <div class="km-tamper-detail-toolbar">
                 <div id="tamperDetailTitle" class="km-tamper-detail-title">选择一个拓展插件查看详情</div>
-                <a id="tamperSourceLink" href="#" class="btn btn-default btn-xs" style="display:none"><i class="fa fa-file-code-o"></i> 查看源码</a>
                 <button id="tamperCopyBtn" type="button" class="btn btn-default btn-xs">复制</button>
               </div>
               <pre class="language-python"><code id="tamperDetailCode" class="language-python"></code></pre>
@@ -74,26 +68,13 @@
           function showDetail($btn) {
               var idx = $list.find(".km-tamper-item").index($btn);
               if (idx < 0) idx = $btn.closest(".km-tamper-item").index();
-              var name = $("#tamperName" + idx).val() || "";
-              var lang = $("#tamperLang" + idx).val() || "";
-              var filterText = $("#tamperFilter" + idx).val() || "";
-              var csText = $("#tamperCS" + idx).val() || "";
-              var esText = $("#tamperES" + idx).val() || "";
-              $detailTitle.text(name);
-              var code = 'FRAMEWORK_NAME = "' + name + '"\n'
-                  + 'LANGUAGE = "' + lang + '"\n\n'
-                  + 'FILTER_FUNCTIONS = ' + filterText + '\n\n'
-                  + 'CONTROLLED_SOURCES = ' + csText + '\n\n'
-                  + 'EXTRA_SINKS = ' + esText;
-              detailCodeEl.textContent = code;
+              var source = $("#tamperSource" + idx).val() || "";
+              var name = $btn.find(".km-tamper-item-name").text() || "";
+              var lang = $btn.attr("data-lang") || "";
+              $detailTitle.text(name + (lang ? "  [" + lang + "]" : ""));
+              detailCodeEl.textContent = source;
               if (window.Prism) {
                   Prism.highlightElement(detailCodeEl);
-              }
-              // 更新源码链接（用 tamper 名称作为 id 查询）
-              if (name) {
-                  $("#tamperSourceLink").attr("href", "{% url 'dashboard:tamper_detail' 0 %}".replace("/0/", "/" + encodeURIComponent(name) + "/")).show();
-              } else {
-                  $("#tamperSourceLink").hide();
               }
           }
 
