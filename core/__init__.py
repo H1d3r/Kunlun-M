@@ -33,7 +33,7 @@ from .engine import Running
 
 from .__version__ import __title__, __introduction__, __url__, __version__
 from .__version__ import __author__, __author_email__, __license__
-from .__version__ import __copyright__, __epilog__, __scan_epilog__, __database_epilog__
+from .__version__ import __copyright__, __epilog__, __scan_epilog__
 
 from core.rule import RuleCheck, TamperCheck
 from core.scaffold import write_rule_file, write_tamper_file
@@ -58,20 +58,50 @@ def main():
     try:
         # arg parse
         t1 = time.time()
-        parser = argparse.ArgumentParser(prog=__title__, description=__introduction__.format(detail="Main Program"), epilog=__epilog__, formatter_class=argparse.RawDescriptionHelpFormatter, usage=argparse.SUPPRESS)
+
+        # 核心命令列表，在 -h 中分组展示
+        CORE_COMMANDS = {'init', 'scan', 'console', 'web'}
+
+        class GroupedSubparsersFormatter(argparse.RawDescriptionHelpFormatter):
+            """自定义 formatter：将 subparsers 拆分为 Core Commands 和 Other Commands 两组"""
+
+            def _format_subgroup(self, title, actions):
+                """格式化子命令分组"""
+                if not actions:
+                    return ''
+                max_len = max(len(a.dest) for a in actions)
+                lines = [title, '-' * len(title)]
+                for a in actions:
+                    help_text = self._expand_help(a)
+                    help_lines = help_text.split(chr(10))
+                    lines.append('  {:<{}} {}'.format(a.dest, max_len, help_lines[0]))
+                    for extra in help_lines[1:]:
+                        lines.append('  {:<{}} {}'.format('', max_len, extra.strip()))
+                return chr(10).join(lines)
+
+            def _format_action(self, action):
+                if isinstance(action, argparse._SubParsersAction):
+                    core = [s for s in action._get_subactions() if s.dest in CORE_COMMANDS]
+                    other = [s for s in action._get_subactions() if s.dest not in CORE_COMMANDS]
+                    parts = []
+                    if core:
+                        parts.append(self._format_subgroup("Core Commands", core))
+                    if other:
+                        parts.append(self._format_subgroup("Other Commands", other))
+                    return chr(10).join(parts)
+                return super()._format_action(action)
+
+        parser = argparse.ArgumentParser(prog=__title__, description=__introduction__.format(detail="Main Program"), epilog=__epilog__, formatter_class=GroupedSubparsersFormatter, usage=argparse.SUPPRESS)
 
         subparsers = parser.add_subparsers()
 
         # init
         parser_group_init = subparsers.add_parser('init', help='Kunlun-M init before use.')
-        parser_group_init.add_argument('init', choices=['initialize', 'checksql'], default='init', help='check and migrate SQL')
-        parser_group_init.add_argument('appname', choices=['index', 'dashboard', 'backend', 'api'],  nargs='?', default='index',
-                                       help='Check App name')
-        parser_group_init.add_argument('migrationname', default='migrationname',  nargs='?', help='Check migration name')
+        parser_group_init.set_defaults(init="init")
 
-        # load config into database
-        parser_group_core = subparsers.add_parser('config', help='config for rule&tamper', description=__introduction__.format(detail='config for rule&tamper'), epilog=__database_epilog__, formatter_class=argparse.RawDescriptionHelpFormatter, usage=argparse.SUPPRESS, add_help=True)
-        parser_group_core.add_argument('load', choices=['load', 'recover', 'loadtamper', 'retamper'], default=False, help='operate for rule&tamper')
+        # export rules and tampers from database to files
+        parser_group_export = subparsers.add_parser('export', help='export rules and tampers from database to files', description=__introduction__.format(detail='export rules and tampers'), epilog='Usage:\n  python {} export'.format('kunlun.py'), formatter_class=argparse.RawDescriptionHelpFormatter, usage=argparse.SUPPRESS, add_help=True)
+        parser_group_export.set_defaults(export="export")
 
         parser_group_generate = subparsers.add_parser(
             'generate',
@@ -137,10 +167,10 @@ def main():
         parser_group_scan.add_argument('--without-vendor', dest='without_vendor', action='store_true', default=False, help='without scan vendor vuln (default open)')
 
         # show for rule & tamper
-        parser_group_show = subparsers.add_parser('show', help='show rule&tamper', description=__introduction__.format(detail='show rule&tamper'), formatter_class=argparse.RawDescriptionHelpFormatter, usage=argparse.SUPPRESS, add_help=True)
+        parser_group_show = subparsers.add_parser('show', help='show rule & tamper', description=__introduction__.format(detail='show rule & tamper'), formatter_class=argparse.RawDescriptionHelpFormatter, usage=argparse.SUPPRESS, add_help=True)
 
         parser_group_show.add_argument('list', choices=['rule', "tamper"], action='store', default=None,
-                                       help='show all rules & tanmpers')
+                                       help='show all rules & tampers')
 
         parser_group_show.add_argument('-k', '--key', dest='listkey', action='store', default="all",
                                        help='key for show rule & tamper. eg: 1001/wordpress')
@@ -201,14 +231,10 @@ def main():
             logger.setLevel(logging.DEBUG)
 
         if hasattr(args, "init"):
-            if args.init == 'checksql':
-                logger.info('Show migrate sql.')
-                call_command('sqlmigrate', args.appname, args.migrationname)
-            else:
-                logger.info('Init Database for KunLun-M.')
-                call_command('makemigrations')
-                call_command('migrate')
-                logger.info('Init Database Finished.')
+            logger.info('Init Database for KunLun-M.')
+            call_command('makemigrations')
+            call_command('migrate')
+            logger.info('Init Database Finished.')
             exit()
 
         if hasattr(args, "port"):
@@ -229,38 +255,12 @@ def main():
                 logger.warning('[INIT] Rule/Tamper sync skipped: {}'.format(e))
             call_command('runserver', args.port)
 
-        if hasattr(args, "load"):
-            if args.load == "load":
-                logger.info("[INIT] RuleCheck start.")
-                RuleCheck().load()
-
-                logger.info("[INIT] RuleCheck finished.")
-                exit()
-
-            elif args.load == "recover":
-                logger.info("[INIT] RuleRecover start.")
-                RuleCheck().recover()
-
-                logger.info("[INIT] RuleRecover finished.")
-                exit()
-
-            elif args.load == "loadtamper":
-                logger.info("[INIT] TamperCheck start.")
-                TamperCheck().load()
-
-                logger.info("[INIT] TamperCheck finished.")
-                exit()
-
-            elif args.load == "retamper":
-                logger.info("[INIT] TamperRecover start.")
-                TamperCheck().recover()
-
-                logger.info("[INIT] TamperRecover finished.")
-                exit()
-
-            else:
-                parser_group_core.print_help()
-                exit()
+        if hasattr(args, "export") and args.export == "export":
+            logger.info("[INIT] Export rules and tampers start.")
+            RuleCheck().export()
+            TamperCheck().export()
+            logger.info("[INIT] Export rules and tampers finished.")
+            exit()
 
         if hasattr(args, "generate_type") and args.generate_type:
             if args.generate_type == "rule":

@@ -21,7 +21,7 @@ from Kunlun_M.settings import RULES_PATH
 from utils.log import logger
 from utils.utils import file_output_format
 
-from web.index.models import Rules, Tampers
+from web.index.models import Rules, FrameworkTamper
 
 
 def block(index):
@@ -379,61 +379,48 @@ class RuleCheck:
 
         return True
 
-    def recover(self):
+    def export(self):
         """
-        recover rule from database to file
-        :return:
+        export rules from database to files
         """
-        rules = Rules.objects.all()
+        from core.scaffold import render_rule
 
+        rules = Rules.objects.all()
         for rule in rules:
             lan = rule.language
+            lan_dir = os.path.join(self.rule_base_path, lan)
+            if not os.path.isdir(lan_dir):
+                os.makedirs(lan_dir, exist_ok=True)
 
-            if not os.path.isdir(os.path.join(RULES_PATH, lan)):
-                os.mkdir(os.path.join(RULES_PATH, lan))
-
-            rule_lan_path = os.path.join(RULES_PATH, lan)
             svid = rule.svid
-
-            rule_path = os.path.join(rule_lan_path, "CVI_{}.py".format(svid))
+            rule_path = os.path.join(lan_dir, "CVI_{}.py".format(svid))
 
             if os.path.exists(rule_path):
-                logger.warning("[INIT][Recover] Rule file CVI_{}.py exist. whether overwrite file? (Y/N)".format(svid))
+                logger.info("[INIT][Export] Rule CVI_{}.py already exists, skipped.".format(svid))
+                continue
 
-                if input().lower() == 'n':
-                    continue
+            logger.info("[INIT][Export] Export rule CVI_{} {} (language: {})".format(svid, rule.rule_name, lan))
 
-            logger.info("[INIT][Recover] Recover new Rule file CVI_{}.py".format(svid))
+            content = render_rule(
+                svid=int(svid),
+                language=lan,
+                rule_name=rule.rule_name,
+                author=rule.author,
+                description=rule.description,
+                level=rule.level,
+                status=rule.status,
+                match_mode=rule.match_mode,
+                match=rule.match,
+                match_name=rule.match_name,
+                black_list=rule.black_list,
+                keyword=rule.keyword,
+                unmatch=rule.unmatch,
+                vul_function=rule.vul_function,
+                main_function=rule.main_function,
+            )
 
-            template_file = codecs.open(os.path.join(RULES_PATH, 'rule.template'), 'rb+', encoding='utf-8', errors='ignore')
-            template_file_content = template_file.read()
-            template_file.close()
-
-            rule_file = codecs.open(rule_path, "wb+", encoding='utf-8', errors='ignore')
-
-            rule_name = rule.rule_name
-            svid = rule.svid
-            language = rule.language
-            author = rule.author
-            description = rule.description
-            level = rule.level
-            status = "True" if rule.status else "False"
-            match_mode = rule.match_mode
-            match = file_output_format(rule.match)
-            match_name = file_output_format(rule.match_name)
-            black_list = file_output_format(rule.black_list)
-            keyword = file_output_format(rule.keyword)
-            unmatch = file_output_format(rule.unmatch)
-            vul_function = file_output_format(rule.vul_function)
-            main_function = rule.main_function
-
-            rule_file.write(template_file_content.format(rule_name=rule_name, svid=svid, language=language,
-                                                         author=author, description=description, level=level, status=status,
-                                                         match_mode=match_mode, match=match, match_name=match_name,
-                                                         black_list=black_list, keyword=keyword, unmatch=unmatch,
-                                                         vul_function=vul_function, main_function=main_function))
-
-            rule_file.close()
+            with codecs.open(rule_path, "w", encoding="utf-8") as f:
+                f.write(content)
 
 
 class TamperCheck:
@@ -446,31 +433,125 @@ class TamperCheck:
 
         self.tamper_base_path = os.path.join(RULES_PATH, "tamper")
 
-    def check_and_update_tamper(self, tamperclass, new_tamper_value):
+    def _migrate_legacy_files(self):
+        """
+        兼容迁移：将根目录下的旧版扁平 tamper 文件自动迁移到对应语言子目录。
+        旧版文件格式：flask = {...} / flask_controlled = []（Format-1）
+        迁移规则：
+        - 目标子目录已有同名新版文件时：直接删除根目录旧文件
+        - 目标子目录无同名文件时：将旧数据转换为新版格式写入子目录，再删除根目录旧文件
+        """
+        from rules.tamper._compat import (is_legacy_tamper_file, _infer_language_from_svids,
+                                           _infer_language_from_controlled, wrap_legacy_module)
+        import importlib.util
 
-        tam_name = tamperclass.tam_name
-        tam_key = tamperclass.tam_key
-        tam_value = tamperclass.tam_value
+        for fname in sorted(os.listdir(self.tamper_base_path)):
+            filepath = os.path.join(self.tamper_base_path, fname)
+            if not os.path.isfile(filepath) or not fname.endswith('.py'):
+                continue
+            if fname.startswith('_') or fname.startswith('demo'):
+                continue
 
-        if str(tam_value) != str(new_tamper_value):
-            logger.debug("[INIT][Tamper Check] Tamper for {} function {} has changed, auto-syncing from file".format(tam_name, tam_key))
-            tamperclass.tam_value = new_tamper_value
+            is_legacy, name = is_legacy_tamper_file(filepath)
+            if not is_legacy:
+                continue
 
-        try:
-            tamperclass.save()
-        except:
-            return False
+            # 加载并包装旧版模块
+            try:
+                spec = importlib.util.spec_from_file_location('_legacy_{}'.format(name), filepath)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
 
-        return True
+                repair_dict = getattr(mod, name, {})
+                all_svids = []
+                for svids in repair_dict.values():
+                    if isinstance(svids, (list, tuple)):
+                        all_svids.extend(svids)
+
+                language = _infer_language_from_svids(all_svids)
+                if not language:
+                    controlled = getattr(mod, name + '_controlled', [])
+                    language = _infer_language_from_controlled(controlled)
+                if not language:
+                    language = 'php'
+
+                wrapped = wrap_legacy_module(mod, name, language, filepath)
+            except Exception as e:
+                logger.warning("[INIT][Tamper Migrate] Failed to process legacy {}: {}".format(fname, e))
+                continue
+
+            target_dir = os.path.join(self.tamper_base_path, language)
+            target_path = os.path.join(target_dir, fname)
+
+            if os.path.exists(target_path):
+                # 新版文件已存在，直接删除旧文件
+                logger.info("[INIT][Tamper Migrate] New file exists at {}/{}, removing legacy {}".format(language, fname, fname))
+                os.remove(filepath)
+            else:
+                # 将旧数据转换为新版格式写入子目录
+                os.makedirs(target_dir, exist_ok=True)
+
+                lines = [
+                    "# -*- coding: utf-8 -*-",
+                    "# Auto-migrated from legacy tamper format",
+                    "import os",
+                    "",
+                    "FRAMEWORK_NAME = '{}'".format(wrapped.FRAMEWORK_NAME),
+                    "DEPENDENCIES = {}",
+                    "",
+                    "def detect(project_dir, language='{}'):".format(language),
+                    '    """检测是否为 {} 项目"""'.format(wrapped.FRAMEWORK_NAME),
+                    "    return False",
+                    "",
+                ]
+
+                if wrapped.FILTER_FUNCTIONS:
+                    lines.append("")
+                    lines.append("FILTER_FUNCTIONS = {")
+                    for func_name, func_value in sorted(wrapped.FILTER_FUNCTIONS.items()):
+                        lines.append("    {}: {},".format(repr(func_name), repr(func_value)))
+                    lines.append("}")
+
+                if wrapped.EXTRA_SINKS:
+                    lines.append("")
+                    lines.append("EXTRA_SINKS = [")
+                    for item in wrapped.EXTRA_SINKS:
+                        lines.append("    ({}, {}),".format(repr(item[0]), repr(item[1])))
+                    lines.append("]")
+
+                if wrapped.CONTROLLED_SOURCES:
+                    lines.append("")
+                    lines.append("CONTROLLED_SOURCES = [")
+                    for source in wrapped.CONTROLLED_SOURCES:
+                        lines.append("    {},".format(repr(source)))
+                    lines.append("]")
+                else:
+                    lines.append("")
+                    lines.append("CONTROLLED_SOURCES = []")
+
+                content = "\n".join(lines) + "\n"
+                with codecs.open(target_path, "w", encoding="utf-8") as f:
+                    f.write(content)
+
+                os.remove(filepath)
+                logger.info("[INIT][Tamper Migrate] Converted & migrated {} -> {}/{}".format(fname, language, fname))
 
     def load(self):
         """
-        加载 tamper 文件到数据库。
+        加载 tamper 文件到数据库（FrameworkTamper 表）。
         扫描 rules/tamper/<language>/<framework>.py 子目录结构。
+        同时兼容旧版：自动迁移根目录下的扁平旧文件到对应语言子目录。
         """
+        import inspect
+
+        # === 兼容迁移：将根目录旧版扁平 tamper 文件迁移到语言子目录 ===
+        self._migrate_legacy_files()
+
         language_dirs = [d for d in os.listdir(self.tamper_base_path)
                          if os.path.isdir(os.path.join(self.tamper_base_path, d))
                          and not d.startswith('_') and d != '__pycache__']
+
+        active_names = set()
 
         for lang in sorted(language_dirs):
             lang_dir = os.path.join(self.tamper_base_path, lang)
@@ -490,133 +571,111 @@ class TamperCheck:
                     logger.warning("[INIT][Load Tamper] Failed to import {}: {}".format(module_path, e))
                     continue
 
-                filter_func = getattr(tamper_obj, 'FILTER_FUNCTIONS', None)
-                controlled_sources = getattr(tamper_obj, 'CONTROLLED_SOURCES', None)
-                extra_sinks = getattr(tamper_obj, 'EXTRA_SINKS', None)
+                active_names.add(tamper_name)
 
-                if filter_func:
-                    for func_name, func_value in filter_func.items():
-                        self._upsert_tamper(tamper_name, "Filter-Function", func_name, func_value)
+                framework_name = getattr(tamper_obj, 'FRAMEWORK_NAME', tamper_name)
+                dependencies = getattr(tamper_obj, 'DEPENDENCIES', {})
+                filter_functions = getattr(tamper_obj, 'FILTER_FUNCTIONS', {})
+                extra_sinks = getattr(tamper_obj, 'EXTRA_SINKS', [])
+                controlled_sources = getattr(tamper_obj, 'CONTROLLED_SOURCES', [])
 
-                if controlled_sources:
-                    for source in controlled_sources:
-                        self._upsert_tamper(tamper_name, "Controlled-Sources", tamper_name, source)
+                # 提取 detect 函数源码
+                detect_code = ''
+                detect_fn = getattr(tamper_obj, 'detect', None)
+                if detect_fn:
+                    try:
+                        detect_code = inspect.getsource(detect_fn)
+                    except Exception:
+                        pass
 
-                if extra_sinks:
-                    for sink_name, svids in extra_sinks:
-                        self._upsert_tamper(tamper_name, "Extra-Sinks", sink_name, svids)
+                FrameworkTamper.objects.update_or_create(
+                    name=tamper_name,
+                    defaults={
+                        'language': lang,
+                        'framework_name': framework_name,
+                        'dependencies': dependencies,
+                        'filter_functions': filter_functions,
+                        'extra_sinks': extra_sinks,
+                        'controlled_sources': controlled_sources,
+                        'detect_code': detect_code,
+                    }
+                )
 
-        # 兼容：扫描根目录旧版 tamper 文件（扁平目录结构）
-        try:
-            from rules.tamper._compat import scan_legacy_tampers, wrap_legacy_module
-            legacy_list = scan_legacy_tampers(self.tamper_base_path)
-            for mod, tamper_name, lang, filepath in legacy_list:
-                wrapped = wrap_legacy_module(mod, tamper_name, lang, filepath)
-                filter_func = getattr(wrapped, 'FILTER_FUNCTIONS', None)
-                controlled_sources = getattr(wrapped, 'CONTROLLED_SOURCES', None)
-                extra_sinks = getattr(wrapped, 'EXTRA_SINKS', None)
-
-                if filter_func:
-                    for func_name, func_value in filter_func.items():
-                        self._upsert_tamper(tamper_name, "Filter-Function", func_name, func_value)
-
-                if controlled_sources:
-                    for source in controlled_sources:
-                        self._upsert_tamper(tamper_name, "Controlled-Sources", tamper_name, source)
-
-                if extra_sinks:
-                    for sink_name, svids in extra_sinks:
-                        self._upsert_tamper(tamper_name, "Extra-Sinks", sink_name, svids)
-        except Exception as e:
-            logger.warning("[INIT][Load Tamper] Legacy tamper scan error: {}".format(e))
-
-        # 清理：删除文件系统中已不存在的 tamper 旧记录
-        try:
-            from rules.tamper._compat import scan_legacy_tampers as _scan_legacy
-            active_names = set()
-            # 收集新版 tamper 名称
-            for lang in language_dirs:
-                lang_dir = os.path.join(self.tamper_base_path, lang)
-                if not os.path.isdir(lang_dir):
-                    continue
-                for fname in os.listdir(lang_dir):
-                    if fname.endswith('.py') and not fname.startswith('_'):
-                        active_names.add(fname[:-3])
-            # 收集旧版 tamper 名称
-            for _, name, _, _ in _scan_legacy(self.tamper_base_path):
-                active_names.add(name)
-            # 删除不活跃的 tamper 记录
-            stale = Tampers.objects.exclude(tam_name__in=active_names)
-            stale_count = stale.count()
-            if stale_count > 0:
-                logger.info("[INIT][Load Tamper] Cleaning {} stale records for removed tampers".format(stale_count))
-                stale.delete()
-        except Exception as e:
-            logger.warning("[INIT][Load Tamper] Stale record cleanup error: {}".format(e))
+        # 注意：不做 stale 清理，与 RuleCheck.load() 保持一致。
+        # 如果用户删除了 tamper 文件但 DB 中仍存在，可通过手动操作清理。
 
         return True
 
-    def _upsert_tamper(self, tam_name, tam_type, tam_key, tam_value):
-        """通用 upsert：存在则检查更新，不存在则创建"""
-        t = Tampers.objects.filter(tam_name=tam_name, tam_type=tam_type, tam_key=tam_key).first()
-
-        if not t:
-            logger.info("[INIT][Load Tamper] New Tamper {} {} key={}".format(tam_name, tam_type, tam_key))
-            Tampers(tam_name=tam_name, tam_type=tam_type, tam_key=tam_key, tam_value=str(tam_value)).save()
-        else:
-            if str(t.tam_value) != str(tam_value):
-                logger.debug("[INIT][Load Tamper] Update {} {} key={}".format(tam_name, tam_type, tam_key))
-                t.tam_value = str(tam_value)
-                t.save()
-
-    def recover(self):
-
-        self.tamper_dict = {}
-        tampers = Tampers.objects.all()
-
-        for tamper in tampers:
-            if tamper.tam_name not in self.tamper_dict:
-                self.tamper_dict[tamper.tam_name] = {"Input-Control": [], "Filter-Function": {}}
-
-            if tamper.tam_type == "Input-Control":
-                self.tamper_dict[tamper.tam_name][tamper.tam_type].append(tamper.tam_value)
-
-            if tamper.tam_type == "Filter-Function":
-                self.tamper_dict[tamper.tam_name][tamper.tam_type][tamper.tam_key] = tamper.tam_value
-
-        # mkdir tamper
-        if not os.path.isdir(os.path.join(RULES_PATH, 'tamper')):
-            os.mkdir(os.path.join(RULES_PATH, "tamper"))
-
+    def export(self):
+        """
+        export tampers from database to files (new format: rules/tamper/<language>/<name>.py)
+        """
         tampers_path = os.path.join(RULES_PATH, "tamper")
+        if not os.path.isdir(tampers_path):
+            os.makedirs(tampers_path, exist_ok=True)
 
-        for tamper_name in self.tamper_dict:
+        for ft in FrameworkTamper.objects.all().order_by("name"):
+            language = ft.language
+            lang_dir = os.path.join(tampers_path, language)
+            if not os.path.isdir(lang_dir):
+                os.makedirs(lang_dir, exist_ok=True)
 
-            tamper_path = os.path.join(tampers_path, "{}.py".format(tamper_name))
+            tamper_path = os.path.join(lang_dir, "{}.py".format(ft.name))
 
             if os.path.exists(tamper_path):
-                logger.warning("[INIT][Recover] Tamper file {}.py exist. whether overwrite file? (Y/N)".format(tamper_name))
+                logger.info("[INIT][Export] Tamper {}.py already exists in {}/, skipped.".format(ft.name, language))
+                continue
 
-                if input().lower() == 'n':
-                    continue
+            logger.info("[INIT][Export] Export tamper {} (language: {})".format(ft.name, language))
 
-            logger.info("[INIT][Recover] Recover new Tamper file {}.py".format(tamper_name))
+            # 生成新版格式文件
+            lines = [
+                "# -*- coding: utf-8 -*-",
+                "import os",
+                "",
+                "FRAMEWORK_NAME = '{}'".format(ft.framework_name or ft.name.capitalize()),
+                "DEPENDENCIES = {}".format(repr(ft.dependencies) if ft.dependencies else '{}'),
+                "",
+            ]
 
-            template_file = codecs.open(os.path.join(RULES_PATH, 'tamper.template'), 'rb+', encoding='utf-8',
-                                        errors='ignore')
-            template_file_content = template_file.read()
-            template_file.close()
+            # detect 函数
+            if ft.detect_code:
+                lines.append("")
+                lines.append(ft.detect_code.rstrip())
+            else:
+                lines.append("")
+                lines.append("def detect(project_dir, language='{}'):".format(language))
+                lines.append('    """检测是否为 {} 项目"""'.format(ft.framework_name or ft.name.capitalize()))
+                lines.append("    return False")
 
-            tamper_file = codecs.open(tamper_path, "wb+", encoding='utf-8', errors='ignore')
+            # Filter-Functions
+            if ft.filter_functions:
+                lines.append("")
+                lines.append("FILTER_FUNCTIONS = {")
+                for func_name, func_value in sorted(ft.filter_functions.items()):
+                    lines.append("    {}: {},".format(repr(func_name), repr(func_value)))
+                lines.append("}")
 
-            tam_name = tamper_name
-            filter_function = self.tamper_dict[tamper_name]["Filter-Function"]
-            input_control = self.tamper_dict[tamper_name]["Input-Control"]
+            # Extra-Sinks
+            if ft.extra_sinks:
+                lines.append("")
+                lines.append("EXTRA_SINKS = [")
+                for item in ft.extra_sinks:
+                    lines.append("    ({}, {}),".format(repr(item[0]), repr(item[1])))
+                lines.append("]")
 
-            tamper_file.write(template_file_content.format(tam_name=tam_name,
-                                                           filter_function=filter_function,
-                                                           input_control=input_control))
+            # Controlled-Sources
+            if ft.controlled_sources:
+                lines.append("")
+                lines.append("CONTROLLED_SOURCES = [")
+                for source in ft.controlled_sources:
+                    lines.append("    {},".format(repr(source)))
+                lines.append("]")
+            else:
+                lines.append("")
+                lines.append("CONTROLLED_SOURCES = []")
 
-            tamper_file.close()
+            content = "\n".join(lines) + "\n"
 
-        return True
+            with codecs.open(tamper_path, "w", encoding="utf-8") as f:
+                f.write(content)
