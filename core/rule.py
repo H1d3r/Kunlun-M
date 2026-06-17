@@ -601,12 +601,8 @@ class TamperCheck:
                     }
                 )
 
-        # 清理：删除文件系统中已不存在的 tamper 记录
-        stale = FrameworkTamper.objects.exclude(name__in=active_names)
-        stale_count = stale.count()
-        if stale_count > 0:
-            logger.info("[INIT][Load Tamper] Cleaning {} stale records for removed tampers".format(stale_count))
-            stale.delete()
+        # 注意：不做 stale 清理，与 RuleCheck.load() 保持一致。
+        # 如果用户删除了 tamper 文件但 DB 中仍存在，可通过手动操作清理。
 
         return True
 
